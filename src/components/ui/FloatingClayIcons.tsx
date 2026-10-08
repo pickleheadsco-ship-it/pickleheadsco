@@ -5,8 +5,6 @@ export interface FloatingClayItem {
   id: string;
   name: string;
   image: string;
-  label?: string;
-  isBrandIcon?: boolean;
   top: string;
   left?: string;
   right?: string;
@@ -17,65 +15,77 @@ export interface FloatingClayItem {
 }
 
 const FLOATING_ITEMS: FloatingClayItem[] = [
-  // 1. 3D Clay Pickleball — Upper right background
-  {
-    id: 'clay-ball-1',
-    name: '3D Clay Pickleball',
-    image: '/clay_pickleball.jpg',
-    top: '10%',
-    right: '2%',
-    size: 'w-11 h-11 sm:w-16 sm:h-16 md:w-20 md:h-20',
-    delay: '0.8s',
-    duration: '4.6s',
-    rotate: '8deg',
-  },
-  // 2. 3D Clay Paddle — Upper-mid right background
+  // 1. Top-Left: 3D Clay Paddle
   {
     id: 'clay-paddle-1',
     name: '3D Clay Paddle',
-    image: '/clay_paddle.jpg',
-    top: '30%',
-    right: '2%',
-    size: 'w-12 h-12 sm:w-18 sm:h-18 md:w-22 md:h-22',
-    delay: '1.4s',
-    duration: '5.1s',
-    rotate: '-10deg',
+    image: '/clay_paddle.png',
+    top: '12%',
+    left: '3%',
+    size: 'w-16 h-16 sm:w-22 sm:h-22 md:w-28 md:h-28 lg:w-32 lg:h-32',
+    delay: '0.4s',
+    duration: '5.2s',
+    rotate: '-12deg',
   },
-  // 3. 3D Clay Whistle — Mid left background
+  // 2. Top-Right: 3D Clay Pickleball
+  {
+    id: 'clay-ball-1',
+    name: '3D Clay Pickleball',
+    image: '/clay_pickleball.png',
+    top: '15%',
+    right: '3.5%',
+    size: 'w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28',
+    delay: '1.0s',
+    duration: '4.6s',
+    rotate: '10deg',
+  },
+  // 3. Mid-Left: 3D Clay Whistle
   {
     id: 'clay-whistle-1',
     name: '3D Clay Whistle',
-    image: '/clay_whistle.jpg',
-    top: '36%',
-    left: '2%',
-    size: 'w-11 h-11 sm:w-16 sm:h-16 md:w-20 md:h-20',
-    delay: '1.2s',
-    duration: '4.4s',
-    rotate: '-12deg',
+    image: '/clay_whistle.png',
+    top: '47%',
+    left: '2.5%',
+    size: 'w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28',
+    delay: '1.6s',
+    duration: '4.8s',
+    rotate: '-15deg',
   },
-  // 4. 3D Clay Net — Lower right background
+  // 4. Mid-Right: 3D Clay Court Net
   {
     id: 'clay-net-1',
     name: '3D Clay Court Net',
-    image: '/clay_net.jpg',
-    top: '68%',
-    right: '2%',
-    size: 'w-12 h-12 sm:w-18 sm:h-18 md:w-22 md:h-22',
-    delay: '1.8s',
-    duration: '5.4s',
-    rotate: '6deg',
+    image: '/clay_net.png',
+    top: '50%',
+    right: '2.5%',
+    size: 'w-16 h-16 sm:w-22 sm:h-22 md:w-28 md:h-28 lg:w-32 lg:h-32',
+    delay: '0.8s',
+    duration: '5.5s',
+    rotate: '8deg',
   },
-  // 5. 3D Clay Pickleball Mini — Lower left background
+  // 5. Bottom-Left: 3D Clay Pickleball
   {
     id: 'clay-ball-2',
-    name: '3D Clay Pickleball Mini',
-    image: '/clay_pickleball.jpg',
-    top: '74%',
-    left: '2%',
-    size: 'w-10 h-10 sm:w-14 sm:h-14 md:w-18 md:h-18',
-    delay: '2.6s',
-    duration: '3.9s',
-    rotate: '14deg',
+    name: '3D Clay Pickleball',
+    image: '/clay_pickleball.png',
+    top: '80%',
+    left: '3%',
+    size: 'w-14 h-14 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28',
+    delay: '2.2s',
+    duration: '4.4s',
+    rotate: '-8deg',
+  },
+  // 6. Bottom-Right: 3D Clay Paddle
+  {
+    id: 'clay-paddle-2',
+    name: '3D Clay Paddle',
+    image: '/clay_paddle.png',
+    top: '82%',
+    right: '3%',
+    size: 'w-16 h-16 sm:w-22 sm:h-22 md:w-28 md:h-28 lg:w-32 lg:h-32',
+    delay: '2.8s',
+    duration: '5.0s',
+    rotate: '15deg',
   },
 ];
 
@@ -106,33 +116,28 @@ export const FloatingClayIcons: React.FC = () => {
               right: item.right,
               animationDelay: item.delay,
               animationDuration: item.duration,
-              transform: `rotate(${item.rotate})`,
             }}
-            className={`absolute pointer-events-auto cursor-pointer animate-float transition-all select-none opacity-85 hover:opacity-100 max-sm:opacity-40 max-sm:scale-80 touch-manipulation ${
-              isPopping ? 'scale-125 brightness-110 !opacity-100' : 'hover:scale-110 hover:-translate-y-1 active:scale-90'
+            className={`absolute pointer-events-auto cursor-pointer animate-float transition-all select-none opacity-90 hover:opacity-100 max-sm:opacity-50 max-sm:scale-80 touch-manipulation ${
+              isPopping ? 'scale-125 brightness-110 !opacity-100' : 'hover:scale-115 hover:-translate-y-1.5 active:scale-95'
             }`}
             onClick={(e) => handleClick(e, item)}
             title={`Click to burst pickleballs! (${item.name})`}
             aria-label={`${item.name} - click to burst pickleballs`}
           >
-            {/* 3D Claymorphic Floating Capsule in Background */}
+            {/* Direct floating 3D clay object — NO FRAME */}
             <div
-              className={`${item.size} rounded-3xl p-1.5 sm:p-2 clay-card shadow-xl flex items-center justify-center transform transition-all group bg-white/90 backdrop-blur-xs relative`}
+              className={`${item.size} relative flex items-center justify-center transition-transform duration-300`}
               style={{
-                boxShadow:
-                  '6px 10px 20px rgba(148, 163, 184, 0.35), -5px -5px 12px rgba(255, 255, 255, 0.95), inset 2px 2px 4px rgba(255, 255, 255, 0.9), inset -2px -2px 5px rgba(203, 213, 225, 0.3)',
+                transform: `rotate(${item.rotate})`,
               }}
             >
               <img
                 src={item.image}
                 alt={item.name}
-                className="w-full h-full object-contain rounded-2xl drop-shadow-sm select-none pointer-events-none"
+                className="w-full h-full object-contain select-none pointer-events-none drop-shadow-md sm:drop-shadow-lg hover:drop-shadow-xl transition-all duration-300 filter"
                 referrerPolicy="no-referrer"
                 draggable={false}
               />
-
-              {/* Touch/hover active glow ring */}
-              <span className="absolute -inset-1 rounded-3xl border-2 border-emerald-400/40 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
             </div>
           </div>
         );
@@ -140,3 +145,4 @@ export const FloatingClayIcons: React.FC = () => {
     </aside>
   );
 };
+
