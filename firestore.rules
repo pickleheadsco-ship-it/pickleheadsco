@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email == 'pickleheadsco@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Users
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isBootstrapAdmin() || (isSignedIn() && request.auth.uid == userId);
+    }
+
+    // Admins lookup
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isBootstrapAdmin();
+    }
+
+    // Venues
+    match /venues/{venueId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isBootstrapAdmin();
+    }
+
+    // Sessions
+    match /sessions/{sessionId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() || isBootstrapAdmin();
+      allow delete: if isBootstrapAdmin() || (isSignedIn() && existing().organizerId == request.auth.uid);
+
+      // Participants Subcollection
+      match /participants/{participantId} {
+        // Anyone with session access can read participants
+        allow read: if true;
+
+        // Player self-registration (allows anonymous or authenticated players)
+        allow create: if isValidId(participantId) &&
+          incoming().participantId == participantId &&
+          incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60 &&
+          incoming().skillLevel in ['beginner', 'intermediate', 'advanced'];
+
+        // Updates: Organizer/Admin can update all fields.
+        // Participant can update their own rest/resume and status
+        allow update: if isValidId(participantId) && (
+          isBootstrapAdmin() ||
+          isSignedIn() ||
+          // Player self-service: can update resting state and left status
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly(['resting', 'status', 'leftAt']) &&
+            incoming().status in ['waiting', 'resting', 'left']
+          )
+        );
+
+        allow delete: if isSignedIn() || isBootstrapAdmin();
+      }
+
+      // Courts Subcollection
+      match /courts/{courtId} {
+        allow read: if true;
+        allow write: if isSignedIn() || isBootstrapAdmin();
+      }
+
+      // Matches Subcollection
+      match /matches/{matchId} {
+        allow read: if true;
+        allow write: if isSignedIn() || isBootstrapAdmin();
+      }
+
+      // Audit Logs Subcollection
+      match /audit_logs/{logId} {
+        allow read: if isSignedIn() || isBootstrapAdmin();
+        allow create: if isSignedIn() || isBootstrapAdmin();
+        allow update, delete: if false; // Append-only audit log
+      }
+    }
+  }
+}
