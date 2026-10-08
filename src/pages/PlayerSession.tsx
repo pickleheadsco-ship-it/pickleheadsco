@@ -154,7 +154,7 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 pb-16 max-w-md mx-auto flex flex-col justify-between">
+    <div className="min-h-screen bg-slate-100 text-slate-900 pb-20 pb-safe max-w-md mx-auto flex flex-col justify-between">
       {/* Mobile Top Header */}
       <header className="bg-white/90 backdrop-blur-md px-4 py-3 sticky top-0 z-40 border-b border-slate-200/60 shadow-2xs">
         <div className="flex items-center justify-between">

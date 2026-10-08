@@ -437,10 +437,39 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
         )}
       </main>
 
+      {/* Mobile Sticky Quick Action Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-md border-t border-slate-200/70 px-4 py-2.5 pb-safe flex items-center justify-between gap-2 shadow-lg">
+        <button
+          onClick={() => setShowAddPlayerModal(true)}
+          className="flex-1 py-3 px-3 clay-btn clay-btn-primary rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Check In</span>
+        </button>
+
+        <button
+          onClick={() => setShowManualMatchModal(true)}
+          disabled={waitingQueue.length < 4 && selectedQueueIds.length === 0}
+          className="flex-1 py-3 px-3 clay-btn clay-btn-secondary rounded-2xl text-xs font-black flex items-center justify-center gap-1.5 disabled:opacity-40"
+        >
+          <Users className="w-4 h-4 text-slate-700" />
+          <span>Match ({selectedQueueIds.length > 0 ? selectedQueueIds.length : '4'})</span>
+        </button>
+
+        <button
+          onClick={() => setShowQRModal(true)}
+          className="w-12 h-12 clay-btn clay-btn-secondary rounded-2xl flex items-center justify-center text-emerald-700"
+          title="Show QR Code"
+          aria-label="Show QR Code"
+        >
+          <QrCode className="w-5 h-5" />
+        </button>
+      </div>
+
       {/* QR Code Modal */}
       {showQRModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="clay-card rounded-3xl p-6 shadow-2xl max-w-sm w-full relative">
+          <div className="clay-card rounded-3xl p-6 shadow-2xl max-w-sm w-full max-h-[90dvh] overflow-y-auto relative">
             <QRCodeDisplay
               url={sessionUrl}
               title={session.name}

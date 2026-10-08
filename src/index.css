@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
+html, body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
 @layer utilities {
+  /* Safe area inset helpers for mobile screens with notches / home bars */
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+
   /* Claymorphism Base Card */
   .clay-card {
     background: #ffffff;

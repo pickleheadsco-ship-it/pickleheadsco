@@ -222,6 +222,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                 <div className="flex-1 clay-inset rounded-2xl px-4 py-2.5 flex items-center">
                   <input
                     type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="ENTER 6-CHAR CODE"
                     maxLength={6}
                     value={joinCodeInput}
@@ -393,7 +397,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
       {/* Create Session Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="clay-card rounded-3xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="clay-card rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-lg font-black text-slate-900">Create Open-Play Session</h3>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">Setup courts and queue matching mode</p>
 

@@ -15,30 +15,40 @@ function AppRouter() {
   const [view, setView] = useState<AppView>('landing');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  // Initialize view from URL path if provided (e.g. /join/{id} or /player/{id})
+  // Initialize view from URL path and support mobile browser back/forward buttons
   useEffect(() => {
-    const path = window.location.pathname;
-    const parts = path.split('/').filter(Boolean);
+    const parseRoute = () => {
+      const path = window.location.pathname;
+      const parts = path.split('/').filter(Boolean);
 
-    if (parts[0] === 'join' && parts[1]) {
-      setActiveSessionId(parts[1]);
-      setSessionId(parts[1]);
-      setView('join');
-    } else if (parts[0] === 'player' && parts[1]) {
-      setActiveSessionId(parts[1]);
-      setSessionId(parts[1]);
-      setView('player');
-    } else if (parts[0] === 'organizer' && parts[1]) {
-      setActiveSessionId(parts[1]);
-      setSessionId(parts[1]);
-      setView('organizer');
-    } else if (parts[0] === 'summary' && parts[1]) {
-      setActiveSessionId(parts[1]);
-      setSessionId(parts[1]);
-      setView('summary');
-    } else if (parts[0] === 'admin') {
-      setView('admin');
-    }
+      if (parts[0] === 'join' && parts[1]) {
+        setActiveSessionId(parts[1]);
+        setSessionId(parts[1]);
+        setView('join');
+      } else if (parts[0] === 'player' && parts[1]) {
+        setActiveSessionId(parts[1]);
+        setSessionId(parts[1]);
+        setView('player');
+      } else if (parts[0] === 'organizer' && parts[1]) {
+        setActiveSessionId(parts[1]);
+        setSessionId(parts[1]);
+        setView('organizer');
+      } else if (parts[0] === 'summary' && parts[1]) {
+        setActiveSessionId(parts[1]);
+        setSessionId(parts[1]);
+        setView('summary');
+      } else if (parts[0] === 'admin') {
+        setView('admin');
+      } else {
+        setView('landing');
+        setActiveSessionId(null);
+        setSessionId(null);
+      }
+    };
+
+    parseRoute();
+    window.addEventListener('popstate', parseRoute);
+    return () => window.removeEventListener('popstate', parseRoute);
   }, [setSessionId]);
 
   const handleSelectSession = (sessionId: string, mode: 'organizer' | 'player') => {

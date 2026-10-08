@@ -52,7 +52,7 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
   const avgGameMins = Math.round(avgGameSeconds / 60);
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 pb-16">
+    <div className="min-h-screen bg-slate-100 text-slate-900 pb-20 pb-safe">
       {/* Top Header */}
       <header className="bg-white/85 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-40">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -211,7 +211,40 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* MOBILE VIEW (< 768px): Tactile Player Standings Cards */}
+            <div className="block md:hidden p-4 space-y-3">
+              {sortedPlayers.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400 font-medium">
+                  No matches completed yet in this session.
+                </div>
+              ) : (
+                sortedPlayers.map((p, idx) => (
+                  <div key={p.participantId} className="clay-subcard rounded-2xl p-3.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-sm font-mono w-7 text-center">
+                          {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                        </span>
+                        <span className="font-bold text-slate-900 text-sm">{p.name}</span>
+                      </div>
+                      <span className="font-black font-mono text-emerald-700 text-sm">
+                        {p.winRate}% <span className="text-[10px] text-slate-400 font-normal">Win</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-600 border-t border-slate-200/60 pt-2">
+                      <SkillBadge skill={p.skillLevel} />
+                      <span className="font-mono text-xs font-bold text-slate-700">
+                        {p.gamesPlayed} Games ({p.wins}W / {p.losses}L)
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* DESKTOP VIEW (>= 768px): Structured Table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
