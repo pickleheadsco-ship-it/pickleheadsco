@@ -21,6 +21,7 @@ import {
 import { BrandLogo } from '../components/ui/BrandLogo';
 import { FloatingClayIcons } from '../components/ui/FloatingClayIcons';
 import { firePickleballBurst } from '../services/fx/pickleballBurst';
+import { OrganizerLoginModal } from '../components/auth/OrganizerLoginModal';
 
 interface LandingPageProps {
   onSelectSession: (sessionId: string, mode: 'organizer' | 'player') => void;
@@ -28,12 +29,15 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpenAdmin }) => {
-  const { user, isAdmin, isOrganizer, signInWithGoogle, logout } = useAuth();
+  const { user, isAdmin, isOrganizer, organizerEmail, logout, signInAsAnonymousPlayer } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joinCodeError, setJoinCodeError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
+
+  // Organizer Login Modal state
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   // New Session Creation Form state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -89,13 +93,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
     e.preventDefault();
     setIsCreating(true);
     try {
+      let currentUser = user;
+      if (!currentUser) {
+        currentUser = await signInAsAnonymousPlayer();
+      }
+      const effectiveOrganizerEmail = user?.email || organizerEmail || 'organizer@picklequeue.internal';
       const sessionId = await createSession({
         name: sessionName,
         venueName,
         numberOfCourts: courtCount,
         matchingMode: matchMode,
-        organizerId: user?.uid || 'guest-organizer',
-        organizerEmail: user?.email || 'organizer@picklequeue.internal',
+        organizerId: currentUser?.uid || 'guest-organizer',
+        organizerEmail: effectiveOrganizerEmail,
       });
       setShowCreateModal(false);
       onSelectSession(sessionId, 'organizer');
@@ -109,13 +118,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
   const handleQuickDemoSession = async () => {
     setIsCreating(true);
     try {
+      let currentUser = user;
+      if (!currentUser) {
+        currentUser = await signInAsAnonymousPlayer();
+      }
+      const effectiveOrganizerEmail = user?.email || organizerEmail || 'organizer@picklequeue.internal';
       const sessionId = await createSession({
         name: 'PickleQueue Open Play (Demo)',
         venueName: 'Sunset Club Courts',
         numberOfCourts: 3,
         matchingMode: 'balanced',
-        organizerId: user?.uid || 'guest-organizer',
-        organizerEmail: user?.email || 'organizer@picklequeue.internal',
+        organizerId: currentUser?.uid || 'guest-organizer',
+        organizerEmail: effectiveOrganizerEmail,
       });
       onSelectSession(sessionId, 'organizer');
     } catch (err) {
@@ -144,21 +158,42 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {isAdmin && (
-              <button
-                onClick={onOpenAdmin}
-                className="px-3 py-2 rounded-2xl clay-btn clay-btn-secondary text-purple-700 text-xs font-bold flex items-center gap-1.5"
-              >
-                <ShieldCheck className="w-4 h-4 text-purple-600" />
-                <span className="hidden sm:inline">Admin Console</span>
-              </button>
-            )}
-
-            {user ? (
+            {isAdmin ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-600 font-semibold hidden md:inline">
-                  {user.email || 'Authenticated'}
-                </span>
+                <button
+                  onClick={onOpenAdmin}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-secondary text-purple-700 text-xs font-bold flex items-center gap-1.5 shadow-2xs"
+                >
+                  <ShieldCheck className="w-4 h-4 text-purple-600" />
+                  <span className="hidden sm:inline">Admin Console</span>
+                </button>
+                <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-purple-50 text-purple-800 text-xs font-bold clay-subcard">
+                  <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                  <span className="truncate max-w-[150px]">{user?.email || organizerEmail || 'Admin'}</span>
+                </div>
+                <button
+                  onClick={logout}
+                  className="p-2 rounded-2xl clay-btn clay-btn-secondary text-slate-600 text-xs"
+                  title="Sign Out"
+                  aria-label="Sign out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : isOrganizer ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 text-emerald-800 text-xs font-bold clay-subcard">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="hidden sm:inline">Organizer:</span>
+                  <span className="truncate max-w-[140px]">{user?.email || organizerEmail || 'Staff'}</span>
+                </div>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Host Session</span>
+                </button>
                 <button
                   onClick={logout}
                   className="p-2 rounded-2xl clay-btn clay-btn-secondary text-slate-600 text-xs"
@@ -169,13 +204,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                 </button>
               </div>
             ) : (
-              <button
-                onClick={signInWithGoogle}
-                className="px-3.5 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-700 text-xs font-bold flex items-center gap-1.5"
-              >
-                <LogIn className="w-4 h-4 text-emerald-600" />
-                <span>Organizer Login</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {user && user.isAnonymous && (
+                  <span className="text-[11px] text-slate-400 font-bold px-2 py-1 rounded-xl bg-slate-100 hidden sm:inline">
+                    Player Mode
+                  </span>
+                )}
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="px-3.5 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-800 text-xs font-bold flex items-center gap-1.5 shadow-xs hover:border-emerald-300 transition-all"
+                >
+                  <LogIn className="w-4 h-4 text-emerald-600" />
+                  <span>Organizer Login</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -487,6 +529,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
           </div>
         </div>
       )}
+
+      {/* Dedicated Organizer & Staff Login Modal */}
+      <OrganizerLoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+      />
     </div>
   );
 };

@@ -24,7 +24,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBackToHome,
   onOpenSession,
 }) => {
-  const { user } = useAuth();
+  const { user, organizerEmail } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'sessions' | 'rules' | 'audit'>('overview');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +83,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="text-xs text-slate-400 font-mono hidden sm:inline">
-            Admin: {user?.email || 'SuperAdmin'}
+            Admin: {user?.email || organizerEmail || 'SuperAdmin'}
           </div>
         </div>
       </header>
