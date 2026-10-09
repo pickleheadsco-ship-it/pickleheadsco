@@ -46,6 +46,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
   const [courtCount, setCourtCount] = useState(3);
   const [matchMode, setMatchMode] = useState<MatchingMode>('balanced');
   const [isCreating, setIsCreating] = useState(false);
+  const [createSessionError, setCreateSessionError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchActiveSessions();
@@ -92,24 +93,36 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
   const handleCreateNewSession = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCreating(true);
+    setCreateSessionError(null);
     try {
       let currentUser = user;
       if (!currentUser) {
-        currentUser = await signInAsAnonymousPlayer();
+        try {
+          currentUser = await signInAsAnonymousPlayer();
+        } catch {
+          // Gracefully continue even if anonymous auth is restricted
+        }
       }
       const effectiveOrganizerEmail = user?.email || organizerEmail || 'organizer@picklequeue.internal';
+      const effectiveOrganizerId = currentUser?.uid || `org-${Date.now()}`;
       const sessionId = await createSession({
-        name: sessionName,
-        venueName,
+        name: sessionName || 'Open Play Session',
+        venueName: venueName || 'PickleCenter Arena',
         numberOfCourts: courtCount,
         matchingMode: matchMode,
-        organizerId: currentUser?.uid || 'guest-organizer',
+        organizerId: effectiveOrganizerId,
         organizerEmail: effectiveOrganizerEmail,
       });
+
+      if (!sessionId) {
+        throw new Error('Unable to generate session terminal ID.');
+      }
+
       setShowCreateModal(false);
       onSelectSession(sessionId, 'organizer');
     } catch (err: any) {
-      console.error(err);
+      console.error('Session creation error:', err);
+      setCreateSessionError(err?.message || 'Failed to create session. Please try again.');
     } finally {
       setIsCreating(false);
     }
@@ -120,20 +133,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
     try {
       let currentUser = user;
       if (!currentUser) {
-        currentUser = await signInAsAnonymousPlayer();
+        try {
+          currentUser = await signInAsAnonymousPlayer();
+        } catch {}
       }
       const effectiveOrganizerEmail = user?.email || organizerEmail || 'organizer@picklequeue.internal';
+      const effectiveOrganizerId = currentUser?.uid || `org-${Date.now()}`;
       const sessionId = await createSession({
         name: 'PickleQueue Open Play (Demo)',
         venueName: 'Sunset Club Courts',
         numberOfCourts: 3,
         matchingMode: 'balanced',
-        organizerId: currentUser?.uid || 'guest-organizer',
+        organizerId: effectiveOrganizerId,
         organizerEmail: effectiveOrganizerEmail,
       });
-      onSelectSession(sessionId, 'organizer');
+      if (sessionId) {
+        onSelectSession(sessionId, 'organizer');
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Demo session creation error:', err);
     } finally {
       setIsCreating(false);
     }
@@ -442,6 +460,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
           <div className="clay-card rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-lg font-black text-slate-900">Create Open-Play Session</h3>
             <p className="text-xs text-slate-500 mt-0.5 font-medium">Setup courts and queue matching mode</p>
+
+            {createSessionError && (
+              <div className="mt-3 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold animate-in fade-in">
+                {createSessionError}
+              </div>
+            )}
 
             <form onSubmit={handleCreateNewSession} className="mt-5 space-y-4">
               <div>

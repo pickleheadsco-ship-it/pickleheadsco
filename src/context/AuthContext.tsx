@@ -24,7 +24,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<User>;
   signInWithOrganizerCode: (email: string, code: string) => Promise<boolean>;
-  signInAsAnonymousPlayer: () => Promise<User>;
+  signInAsAnonymousPlayer: () => Promise<User | null>;
   logout: () => Promise<void>;
 }
 
@@ -37,7 +37,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signInWithGoogle: async () => { throw new Error('Uninitialized'); },
   signInWithOrganizerCode: async () => false,
-  signInAsAnonymousPlayer: async () => { throw new Error('Uninitialized'); },
+  signInAsAnonymousPlayer: async () => null,
   logout: async () => {},
 });
 
@@ -140,10 +140,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   };
 
-  const handleAnonymousSignIn = async (): Promise<User> => {
+  const handleAnonymousSignIn = async (): Promise<User | null> => {
     if (auth.currentUser) return auth.currentUser;
-    const res = await signInAnonymously(auth);
-    return res.user;
+    try {
+      const res = await signInAnonymously(auth);
+      return res.user;
+    } catch (err) {
+      console.warn('Anonymous sign-in not available in this environment:', err);
+      return null;
+    }
   };
 
   const handleLogout = async () => {

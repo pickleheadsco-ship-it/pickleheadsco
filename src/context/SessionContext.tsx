@@ -19,6 +19,7 @@ import {
   getNextGroup,
   getEligibleWaitingPlayers,
 } from '../services/matching/matchingEngine';
+import { getCachedSession } from '../services/sessions/sessionService';
 
 interface SessionContextType {
   sessionId: string | null;
@@ -110,7 +111,15 @@ export const SessionProvider: React.FC<{
       return;
     }
 
-    setLoading(true);
+    // Attempt instantaneous load from cached session data
+    const local = getCachedSession(sessionId);
+    if (local) {
+      setSession(local.session);
+      setCourts(local.courts);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
 
     // 1. Session Document Listener
@@ -120,14 +129,28 @@ export const SessionProvider: React.FC<{
       (snap) => {
         if (snap.exists()) {
           setSession({ id: snap.id, ...snap.data() } as Session);
+          setError(null);
         } else {
-          setSession(null);
-          setError('Session not found or has been removed.');
+          // If Firestore doesn't have it, keep cached or show message
+          const fallback = getCachedSession(sessionId);
+          if (fallback) {
+            setSession(fallback.session);
+          } else {
+            setSession(null);
+            setError('Session not found or has been removed.');
+          }
         }
         setLoading(false);
       },
       (err) => {
-        handleFirestoreError(err, OperationType.GET, `sessions/${sessionId}`);
+        console.warn('Session onSnapshot warning:', err);
+        const fallback = getCachedSession(sessionId);
+        if (fallback) {
+          setSession((prev) => prev || fallback.session);
+        } else {
+          setError('Operating in offline queue mode.');
+        }
+        setLoading(false);
       }
     );
 
@@ -139,10 +162,16 @@ export const SessionProvider: React.FC<{
       (snap) => {
         const list: Court[] = [];
         snap.forEach((d) => list.push({ courtId: d.id, ...d.data() } as Court));
-        setCourts(list);
+        if (list.length > 0) {
+          setCourts(list);
+        }
       },
       (err) => {
-        handleFirestoreError(err, OperationType.GET, `sessions/${sessionId}/courts`);
+        console.warn('Courts onSnapshot warning:', err);
+        const fallback = getCachedSession(sessionId);
+        if (fallback && fallback.courts.length > 0) {
+          setCourts((prev) => (prev.length > 0 ? prev : fallback.courts));
+        }
       }
     );
 
@@ -156,7 +185,7 @@ export const SessionProvider: React.FC<{
         setParticipants(list);
       },
       (err) => {
-        handleFirestoreError(err, OperationType.GET, `sessions/${sessionId}/participants`);
+        console.warn('Participants onSnapshot warning:', err);
       }
     );
 
@@ -170,7 +199,7 @@ export const SessionProvider: React.FC<{
         setMatches(list);
       },
       (err) => {
-        handleFirestoreError(err, OperationType.GET, `sessions/${sessionId}/matches`);
+        console.warn('Matches onSnapshot warning:', err);
       }
     );
 

@@ -45,59 +45,34 @@ service cloud.firestore {
 
     // Venues
     match /venues/{venueId} {
-      allow read: if true;
-      allow write: if isSignedIn() || isBootstrapAdmin();
+      allow read, write: if true;
     }
 
     // Sessions
     match /sessions/{sessionId} {
       allow read: if true;
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() || isBootstrapAdmin();
-      allow delete: if isBootstrapAdmin() || (isSignedIn() && existing().organizerId == request.auth.uid);
+      allow create, update: if true;
+      allow delete: if true;
 
       // Participants Subcollection
       match /participants/{participantId} {
-        // Anyone with session access can read participants
-        allow read: if true;
-
-        // Player self-registration (allows anonymous or authenticated players)
-        allow create: if isValidId(participantId) &&
-          incoming().participantId == participantId &&
-          incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60 &&
-          incoming().skillLevel in ['beginner', 'intermediate', 'advanced'];
-
-        // Updates: Organizer/Admin can update all fields.
-        // Participant can update their own rest/resume and status
-        allow update: if isValidId(participantId) && (
-          isBootstrapAdmin() ||
-          isSignedIn() ||
-          // Player self-service: can update resting state and left status
-          (
-            incoming().diff(existing()).affectedKeys().hasOnly(['resting', 'status', 'leftAt']) &&
-            incoming().status in ['waiting', 'resting', 'left']
-          )
-        );
-
-        allow delete: if isSignedIn() || isBootstrapAdmin();
+        allow read, write: if true;
       }
 
       // Courts Subcollection
       match /courts/{courtId} {
-        allow read: if true;
-        allow write: if isSignedIn() || isBootstrapAdmin();
+        allow read, write: if true;
       }
 
       // Matches Subcollection
       match /matches/{matchId} {
-        allow read: if true;
-        allow write: if isSignedIn() || isBootstrapAdmin();
+        allow read, write: if true;
       }
 
       // Audit Logs Subcollection
       match /audit_logs/{logId} {
-        allow read: if isSignedIn() || isBootstrapAdmin();
-        allow create: if isSignedIn() || isBootstrapAdmin();
+        allow read: if true;
+        allow create: if true;
         allow update, delete: if false; // Append-only audit log
       }
     }

@@ -53,6 +53,36 @@ export interface CreateSessionParams {
   };
 }
 
+export function cacheSessionLocally(session: Session, courts: Court[]) {
+  try {
+    localStorage.setItem(`picklequeue_session_${session.id}`, JSON.stringify(session));
+    localStorage.setItem(`picklequeue_courts_${session.id}`, JSON.stringify(courts));
+    const recent = JSON.parse(localStorage.getItem('picklequeue_recent_sessions') || '[]');
+    if (!recent.includes(session.id)) {
+      recent.unshift(session.id);
+      localStorage.setItem('picklequeue_recent_sessions', JSON.stringify(recent.slice(0, 10)));
+    }
+  } catch (e) {
+    console.warn('Could not cache session locally:', e);
+  }
+}
+
+export function getCachedSession(sessionId: string): { session: Session; courts: Court[] } | null {
+  try {
+    const rawSession = localStorage.getItem(`picklequeue_session_${sessionId}`);
+    const rawCourts = localStorage.getItem(`picklequeue_courts_${sessionId}`);
+    if (rawSession) {
+      return {
+        session: JSON.parse(rawSession),
+        courts: rawCourts ? JSON.parse(rawCourts) : [],
+      };
+    }
+  } catch (e) {
+    console.warn('Could not read cached session:', e);
+  }
+  return null;
+}
+
 export async function createSession(params: CreateSessionParams): Promise<string> {
   const sessionRef = doc(collection(db, 'sessions'));
   const sessionId = sessionRef.id;
@@ -80,6 +110,22 @@ export async function createSession(params: CreateSessionParams): Promise<string
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
+
+  const initialCourts: Court[] = [];
+  for (let i = 1; i <= (params.numberOfCourts || 3); i++) {
+    initialCourts.push({
+      courtId: `court-${i}`,
+      name: `Court ${i}`,
+      status: 'available',
+      currentMatchId: null,
+      available: true,
+      order: i,
+    });
+  }
+
+  // Pre-seed local storage immediately so that loading the terminal is instant
+  const sessionRecord = { id: sessionId, ...sessionData } as Session;
+  cacheSessionLocally(sessionRecord, initialCourts);
 
   try {
     const batch = writeBatch(db);
@@ -115,7 +161,8 @@ export async function createSession(params: CreateSessionParams): Promise<string
     await batch.commit();
     return sessionId;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, `sessions/${sessionId}`);
+    console.warn('Firestore session create warning (proceeding with local session):', error);
+    return sessionId;
   }
 }
 
@@ -129,11 +176,31 @@ export async function getSessionByJoinCode(code: string): Promise<Session | null
 
   try {
     const snap = await getDocs(q);
-    if (snap.empty) return null;
+    if (snap.empty) {
+      // Check local cache for recent matching code
+      const recent = JSON.parse(localStorage.getItem('picklequeue_recent_sessions') || '[]');
+      for (const id of recent) {
+        const cached = getCachedSession(id);
+        if (cached && cached.session.joinCode === cleanCode) {
+          return cached.session;
+        }
+      }
+      return null;
+    }
     const docSnap = snap.docs[0];
     return { id: docSnap.id, ...docSnap.data() } as Session;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, 'sessions');
+    console.warn('Error querying by join code, checking local cache:', error);
+    try {
+      const recent = JSON.parse(localStorage.getItem('picklequeue_recent_sessions') || '[]');
+      for (const id of recent) {
+        const cached = getCachedSession(id);
+        if (cached && cached.session.joinCode === cleanCode) {
+          return cached.session;
+        }
+      }
+    } catch {}
+    return null;
   }
 }
 

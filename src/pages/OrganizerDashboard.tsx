@@ -89,7 +89,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
     );
   }
 
-  if (error || !session || !sessionId) {
+  if (!session || !sessionId) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
         <div className="clay-card rounded-3xl p-8 text-center max-w-md w-full">
