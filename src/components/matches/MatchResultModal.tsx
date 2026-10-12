@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Court, Match, Participant } from '../../types';
-import { Trophy, X, Award } from 'lucide-react';
+import { Trophy, X, Award, AlertCircle, Loader2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface MatchResultModalProps {
@@ -24,6 +24,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   const [scoreA, setScoreA] = useState<string>('11');
   const [scoreB, setScoreB] = useState<string>('9');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -34,6 +35,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setErrorMsg(null);
 
     try {
       const parsedA = parseInt(scoreA, 10);
@@ -50,8 +52,9 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
 
       await onSubmit(winningTeam, score);
       onClose();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Error finalizing match:', err);
+      setErrorMsg(err?.message || 'Could not complete match. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -187,6 +190,13 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
             <strong className="text-slate-900 font-bold">4 In / 4 Out Rotation:</strong> All 4 players will cycle off the court and re-enter behind waiting players.
           </div>
 
+          {errorMsg && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1 font-bold">{errorMsg}</div>
+            </div>
+          )}
+
           {/* Modal Actions */}
           <div className="flex items-center justify-end gap-2.5 pt-2">
             <button
@@ -200,9 +210,16 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-3 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md disabled:opacity-50"
+              className="px-5 py-3 rounded-2xl clay-btn clay-btn-primary text-white text-xs font-black shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isSubmitting ? 'Saving...' : 'Finalize & Return to Queue'}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Finalizing...</span>
+                </>
+              ) : (
+                <span>Finalize & Return to Queue</span>
+              )}
             </button>
           </div>
         </form>

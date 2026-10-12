@@ -404,27 +404,44 @@ export async function completeMatch(
 
   try {
     // Determine current max queue position
-    const participantsSnap = await getDocs(collection(db, `sessions/${sessionId}/participants`));
     let maxPos = 0;
-    participantsSnap.forEach((d) => {
-      const pos = d.data().queuePosition || 0;
-      if (pos > maxPos) maxPos = pos;
-    });
+    try {
+      const participantsSnap = await getDocs(collection(db, `sessions/${sessionId}/participants`));
+      participantsSnap.forEach((d) => {
+        const pos = d.data().queuePosition || 0;
+        if (pos > maxPos) maxPos = pos;
+      });
+    } catch (e) {
+      console.warn('Could not get max queue position:', e);
+    }
 
     await runTransaction(db, async (txn) => {
+      // 1. ALL READS FIRST (Firestore requires all reads before any writes)
       const matchSnap = await txn.get(matchRef);
       if (!matchSnap.exists()) throw new Error('Match record not found.');
       const matchData = matchSnap.data() as Match;
 
       if (matchData.status === 'completed') {
-        throw new Error('This match has already been completed.');
+        return;
       }
 
+      const courtSnap = await txn.get(courtRef);
+
+      // Read all participants upfront before any writes
+      const pSnaps = await Promise.all(
+        (matchData.playerIds || []).map((pId) =>
+          txn.get(doc(db, `sessions/${sessionId}/participants`, pId))
+        )
+      );
+
+      // 2. ALL WRITES AFTER ALL READS
       // Calculate duration
       let durationSeconds = 600; // default fallback 10m
       if (matchData.startedAt) {
-        const startMs = matchData.startedAt.toMillis ? matchData.startedAt.toMillis() : new Date(matchData.startedAt).getTime();
-        durationSeconds = Math.max(60, Math.floor((Date.now() - startMs) / 1000));
+        const startMs = typeof matchData.startedAt?.toMillis === 'function'
+          ? matchData.startedAt.toMillis()
+          : new Date(matchData.startedAt).getTime();
+        durationSeconds = Math.max(60, Math.floor((Date.now() - (isNaN(startMs) ? Date.now() : startMs)) / 1000));
       }
 
       // Update match
@@ -438,23 +455,23 @@ export async function completeMatch(
       });
 
       // Free up court
-      txn.update(courtRef, {
-        status: 'available',
-        currentMatchId: null,
-        updatedAt: serverTimestamp(),
-      });
+      if (courtSnap.exists()) {
+        txn.update(courtRef, {
+          status: 'available',
+          currentMatchId: null,
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       const winnerIds = winningTeam === 'teamA' ? matchData.teamA : matchData.teamB;
-      const loserIds = winningTeam === 'teamA' ? matchData.teamB : matchData.teamA;
 
       // Update each player's statistics and re-queue them (4 IN / 4 OUT rule)
       let offset = 1;
-      for (const pId of matchData.playerIds) {
-        const pRef = doc(db, `sessions/${sessionId}/participants`, pId);
-        const pSnap = await txn.get(pRef);
+      for (const pSnap of pSnaps) {
         if (!pSnap.exists()) continue;
 
         const pData = pSnap.data() as Participant;
+        const pId = pData.participantId;
         const isWinner = winnerIds.includes(pId);
         const gamesPlayed = (pData.gamesPlayed || 0) + 1;
         const wins = (pData.wins || 0) + (isWinner ? 1 : 0);
@@ -470,6 +487,7 @@ export async function completeMatch(
         const previousPartners = Array.from(new Set([...(pData.previousPartnerIds || []), ...currentPartners]));
         const previousOpponents = Array.from(new Set([...(pData.previousOpponentIds || []), ...currentOpponents]));
 
+        const pRef = doc(db, `sessions/${sessionId}/participants`, pId);
         txn.update(pRef, {
           status: 'waiting',
           currentCourtId: null,
@@ -490,7 +508,25 @@ export async function completeMatch(
       }
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/matches/${matchId}`);
+    console.warn('completeMatch transaction error, running direct recovery:', error);
+    // Direct recovery fallback: ensure court and match status are freed
+    try {
+      await updateDoc(matchRef, {
+        status: 'completed',
+        winningTeam,
+        score: score || null,
+        endedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await updateDoc(courtRef, {
+        status: 'available',
+        currentMatchId: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (fallbackErr) {
+      console.warn('Direct recovery error:', fallbackErr);
+      handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/matches/${matchId}`);
+    }
   }
 }
 

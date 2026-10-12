@@ -154,8 +154,11 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   ) => {
     if (!activeEndingCourt) return;
     const { court, match } = activeEndingCourt;
-    await completeMatch(sessionId, match.matchId, court.courtId, winningTeam, score);
-    setActiveEndingCourt(null);
+    try {
+      await completeMatch(sessionId, match.matchId, court.courtId, winningTeam, score);
+    } finally {
+      setActiveEndingCourt(null);
+    }
   };
 
   const handleAnnounceCourt = (court: Court, match?: Match) => {
