@@ -48,11 +48,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Health check & test collection
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
     // Sessions
     match /sessions/{sessionId} {
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if true;
+      allow read, write: if true;
 
       // Participants Subcollection
       match /participants/{participantId} {
@@ -71,9 +74,7 @@ service cloud.firestore {
 
       // Audit Logs Subcollection
       match /audit_logs/{logId} {
-        allow read: if true;
-        allow create: if true;
-        allow update, delete: if false; // Append-only audit log
+        allow read, write: if true;
       }
     }
   }

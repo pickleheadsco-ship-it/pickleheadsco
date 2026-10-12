@@ -3,6 +3,7 @@ import { collection, getDocs, query, limit } from 'firebase/firestore';
 import { db } from '../services/firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { Session, MatchingMode } from '../types';
+import { getRecentLocalSessions } from '../services/sessions/sessionService';
 import {
   ShieldCheck,
   Building,
@@ -46,9 +47,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const snap = await getDocs(q);
       const list: Session[] = [];
       snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Session));
+      const localRecent = getRecentLocalSessions();
+      for (const loc of localRecent) {
+        if (!list.some((s) => s.id === loc.id)) {
+          list.push(loc);
+        }
+      }
       setSessions(list);
     } catch (err) {
-      console.error(err);
+      console.warn('Could not load sessions from Firestore, using local cache:', err);
+      const localRecent = getRecentLocalSessions();
+      setSessions(localRecent);
     } finally {
       setLoading(false);
     }

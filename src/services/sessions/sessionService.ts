@@ -57,10 +57,10 @@ export function cacheSessionLocally(session: Session, courts: Court[]) {
   try {
     localStorage.setItem(`picklequeue_session_${session.id}`, JSON.stringify(session));
     localStorage.setItem(`picklequeue_courts_${session.id}`, JSON.stringify(courts));
-    const recent = JSON.parse(localStorage.getItem('picklequeue_recent_sessions') || '[]');
+    const recent: string[] = JSON.parse(localStorage.getItem('picklequeue_recent_sessions') || '[]');
     if (!recent.includes(session.id)) {
       recent.unshift(session.id);
-      localStorage.setItem('picklequeue_recent_sessions', JSON.stringify(recent.slice(0, 10)));
+      localStorage.setItem('picklequeue_recent_sessions', JSON.stringify(recent.slice(0, 15)));
     }
   } catch (e) {
     console.warn('Could not cache session locally:', e);
@@ -83,10 +83,27 @@ export function getCachedSession(sessionId: string): { session: Session; courts:
   return null;
 }
 
+export function getRecentLocalSessions(): Session[] {
+  try {
+    const recent: string[] = JSON.parse(localStorage.getItem('picklequeue_recent_sessions') || '[]');
+    const result: Session[] = [];
+    for (const sId of recent) {
+      const cached = getCachedSession(sId);
+      if (cached && cached.session && cached.session.status !== 'completed') {
+        result.push(cached.session);
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
 export async function createSession(params: CreateSessionParams): Promise<string> {
   const sessionRef = doc(collection(db, 'sessions'));
   const sessionId = sessionRef.id;
   const joinCode = generateJoinCode();
+  const nowIso = new Date().toISOString();
 
   const sessionData: Omit<Session, 'id'> = {
     venueId: 'v-default',
@@ -112,9 +129,11 @@ export async function createSession(params: CreateSessionParams): Promise<string
   };
 
   const initialCourts: Court[] = [];
-  for (let i = 1; i <= (params.numberOfCourts || 3); i++) {
+  const count = params.numberOfCourts || 3;
+  for (let i = 1; i <= count; i++) {
+    const courtId = `court-${i}`;
     initialCourts.push({
-      courtId: `court-${i}`,
+      courtId,
       name: `Court ${i}`,
       status: 'available',
       currentMatchId: null,
@@ -123,19 +142,26 @@ export async function createSession(params: CreateSessionParams): Promise<string
     });
   }
 
-  // Pre-seed local storage immediately so that loading the terminal is instant
-  const sessionRecord = { id: sessionId, ...sessionData } as Session;
+  // Pre-seed local storage immediately with valid date strings so that opening the terminal is instant
+  const sessionRecord = {
+    id: sessionId,
+    ...sessionData,
+    startedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  } as Session;
   cacheSessionLocally(sessionRecord, initialCourts);
 
   try {
     const batch = writeBatch(db);
     batch.set(sessionRef, sessionData);
 
-    // Seed default courts (Court 1, Court 2, etc.)
-    for (let i = 1; i <= (params.numberOfCourts || 3); i++) {
-      const courtRef = doc(collection(db, `sessions/${sessionId}/courts`));
+    // Seed deterministic default courts (Court 1, Court 2, etc.)
+    for (let i = 1; i <= count; i++) {
+      const courtId = `court-${i}`;
+      const courtRef = doc(db, `sessions/${sessionId}/courts`, courtId);
       const courtData: Court = {
-        courtId: courtRef.id,
+        courtId,
         name: `Court ${i}`,
         status: 'available',
         currentMatchId: null,
@@ -146,9 +172,11 @@ export async function createSession(params: CreateSessionParams): Promise<string
       batch.set(courtRef, courtData);
     }
 
-    // Record audit event
+    await batch.commit();
+
+    // Fire-and-forget audit event so it never blocks session launch
     const auditRef = doc(collection(db, `sessions/${sessionId}/audit_logs`));
-    batch.set(auditRef, {
+    setDoc(auditRef, {
       id: auditRef.id,
       sessionId,
       action: 'SESSION_STARTED',
@@ -156,9 +184,8 @@ export async function createSession(params: CreateSessionParams): Promise<string
       actorName: params.organizerEmail || 'Organizer',
       timestamp: serverTimestamp(),
       metadata: { numberOfCourts: params.numberOfCourts, matchingMode: params.matchingMode },
-    });
+    }).catch((err) => console.warn('Audit log write error:', err));
 
-    await batch.commit();
     return sessionId;
   } catch (error) {
     console.warn('Firestore session create warning (proceeding with local session):', error);

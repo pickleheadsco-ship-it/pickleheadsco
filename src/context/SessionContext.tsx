@@ -19,7 +19,7 @@ import {
   getNextGroup,
   getEligibleWaitingPlayers,
 } from '../services/matching/matchingEngine';
-import { getCachedSession } from '../services/sessions/sessionService';
+import { getCachedSession, cacheSessionLocally } from '../services/sessions/sessionService';
 
 interface SessionContextType {
   sessionId: string | null;
@@ -128,8 +128,12 @@ export const SessionProvider: React.FC<{
       sessionDocRef,
       (snap) => {
         if (snap.exists()) {
-          setSession({ id: snap.id, ...snap.data() } as Session);
+          const fresh = { id: snap.id, ...snap.data() } as Session;
+          setSession(fresh);
           setError(null);
+          // Keep local cache fresh
+          const existing = getCachedSession(sessionId);
+          cacheSessionLocally(fresh, existing?.courts || []);
         } else {
           // If Firestore doesn't have it, keep cached or show message
           const fallback = getCachedSession(sessionId);
@@ -164,6 +168,16 @@ export const SessionProvider: React.FC<{
         snap.forEach((d) => list.push({ courtId: d.id, ...d.data() } as Court));
         if (list.length > 0) {
           setCourts(list);
+          const current = getCachedSession(sessionId);
+          if (current?.session) {
+            cacheSessionLocally(current.session, list);
+          }
+        } else {
+          // If Firestore snapshot is empty yet, maintain fallback courts
+          const fallback = getCachedSession(sessionId);
+          if (fallback && fallback.courts.length > 0) {
+            setCourts((prev) => (prev.length > 0 ? prev : fallback.courts));
+          }
         }
       },
       (err) => {

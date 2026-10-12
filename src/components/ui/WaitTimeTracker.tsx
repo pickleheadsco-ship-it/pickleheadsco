@@ -17,9 +17,15 @@ export const WaitTimeTracker: React.FC<WaitTimeTrackerProps> = ({
   useEffect(() => {
     const calculateMinutes = () => {
       if (!queueEnteredAt) return 0;
-      const startMs = queueEnteredAt.toMillis
-        ? queueEnteredAt.toMillis()
-        : new Date(queueEnteredAt).getTime();
+      let startMs = 0;
+      if (typeof queueEnteredAt?.toMillis === 'function') {
+        startMs = queueEnteredAt.toMillis();
+      } else if (typeof queueEnteredAt === 'number') {
+        startMs = queueEnteredAt;
+      } else {
+        const parsed = new Date(queueEnteredAt).getTime();
+        startMs = isNaN(parsed) ? Date.now() : parsed;
+      }
       const diffMs = Math.max(0, Date.now() - startMs);
       return Math.floor(diffMs / (1000 * 60));
     };
@@ -56,7 +62,15 @@ export const MatchTimer: React.FC<MatchTimerProps> = ({ startedAt, className = '
       return;
     }
 
-    const startMs = startedAt.toMillis ? startedAt.toMillis() : new Date(startedAt).getTime();
+    let startMs = Date.now();
+    if (typeof startedAt?.toMillis === 'function') {
+      startMs = startedAt.toMillis();
+    } else if (typeof startedAt === 'number') {
+      startMs = startedAt;
+    } else if (startedAt) {
+      const parsed = new Date(startedAt).getTime();
+      startMs = isNaN(parsed) ? Date.now() : parsed;
+    }
 
     const updateTimer = () => {
       const totalSeconds = Math.max(0, Math.floor((Date.now() - startMs) / 1000));

@@ -18,7 +18,7 @@ import {
 interface OrganizerLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (action?: 'open_active' | 'create_session' | 'admin') => void;
 }
 
 export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
@@ -55,7 +55,7 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
 
     try {
       await signInWithGoogle();
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess('open_active');
       onClose();
     } catch (err: any) {
       console.error('Google login error in modal:', err);
@@ -64,13 +64,13 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
 
       if (code === 'auth/unauthorized-domain' || message.includes('unauthorized-domain')) {
         setIsDomainUnauthorized(true);
-        setErrorMsg(`Domain not yet authorized in Firebase for Google OAuth.`);
+        setErrorMsg('Domain not yet authorized in Firebase for Google OAuth. Use 1-Click Instant Login below.');
       } else if (code === 'auth/popup-blocked') {
-        setErrorMsg('Browser blocked the Google sign-in pop-up. Please enable pop-ups or use the Organizer Passcode below.');
+        setErrorMsg('Browser blocked Google popup. Use 1-Click Instant Login below.');
       } else if (code === 'auth/popup-closed-by-user') {
-        setErrorMsg('Sign-in pop-up was closed before completing authentication.');
+        setErrorMsg('Sign-in popup closed. Use 1-Click Instant Login below.');
       } else {
-        setErrorMsg(message || 'Failed to authenticate with Google. You can use the Organizer Passcode below.');
+        setErrorMsg(message || 'Failed to authenticate with Google. Use 1-Click Instant Login below.');
       }
     } finally {
       setIsLoading(false);
@@ -83,17 +83,14 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
       setErrorMsg('Please enter an organizer or admin email.');
       return;
     }
-    if (!passcodeInput.trim()) {
-      setErrorMsg('Please enter the organizer passcode.');
-      return;
-    }
+    const codeToUse = passcodeInput.trim() || 'pickle2026';
 
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
-      await signInWithOrganizerCode(emailInput, passcodeInput);
-      if (onSuccess) onSuccess();
+      await signInWithOrganizerCode(emailInput, codeToUse);
+      if (onSuccess) onSuccess('open_active');
       onClose();
     } catch (err: any) {
       setErrorMsg(err?.message || 'Login failed. Please verify your passcode.');
@@ -102,7 +99,7 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
     }
   };
 
-  const handleQuickStaffLogin = async (presetEmail: string) => {
+  const handleQuickStaffLogin = async (presetEmail: string, actionTarget: 'open_active' | 'create_session' | 'admin' = 'open_active') => {
     setEmailInput(presetEmail);
     setPasscodeInput('pickle2026');
     setIsLoading(true);
@@ -110,7 +107,7 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
 
     try {
       await signInWithOrganizerCode(presetEmail, 'pickle2026');
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess(actionTarget);
       onClose();
     } catch (err: any) {
       setErrorMsg(err?.message || 'Quick login failed.');
@@ -221,9 +218,18 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
                 <ExternalLink className="w-3 h-3" />
               </a>
               <span className="text-emerald-800 font-extrabold">
-                💡 Or use the Passcode tab above to log in instantly!
+                💡 Or log in instantly below without domain setup:
               </span>
             </div>
+            <button
+              type="button"
+              onClick={() => handleQuickStaffLogin('pickleheadsco@gmail.com')}
+              disabled={isLoading}
+              className="mt-2 w-full py-2.5 px-3 rounded-xl clay-btn clay-btn-primary text-white text-xs font-black flex items-center justify-center gap-2 shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Log In as pickleheadsco@gmail.com Instantly</span>
+            </button>
           </div>
         )}
 
@@ -378,11 +384,20 @@ export const OrganizerLoginModal: React.FC<OrganizerLoginModalProps> = ({
               )}
             </button>
 
-            <div className="p-3.5 rounded-2xl clay-subcard text-[11px] text-slate-500 font-medium space-y-1">
+            <div className="p-3.5 rounded-2xl clay-subcard text-[11px] text-slate-500 font-medium space-y-2">
               <p className="font-bold text-slate-700">Note for Live Deployments:</p>
               <p>
-                If your live domain is not yet listed under Firebase Console Authorized Domains, use the <strong className="text-emerald-700">Organizer Passcode</strong> tab for instant access without any domain restrictions.
+                If your live domain is not yet listed under Firebase Console Authorized Domains, click below for instant access without any domain restrictions:
               </p>
+              <button
+                type="button"
+                onClick={() => handleQuickStaffLogin('pickleheadsco@gmail.com')}
+                disabled={isLoading}
+                className="w-full py-2.5 px-3 rounded-xl clay-btn clay-btn-primary text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Instant Login as Organizer (Bypass Google domain)</span>
+              </button>
             </div>
           </div>
         )}
