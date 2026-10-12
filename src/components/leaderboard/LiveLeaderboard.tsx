@@ -55,45 +55,51 @@ export const LiveLeaderboard: React.FC<LiveLeaderboardProps> = ({
 
   // Compute sorted & filtered standings
   const sortedPlayers = useMemo(() => {
-    let list = participants.filter((p) => p.status !== 'left');
+    let list = (participants || []).filter((p) => p && p.status !== 'left');
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter((p) => p.name.toLowerCase().includes(q));
+      list = list.filter((p) => p && typeof p.name === 'string' && p.name.toLowerCase().includes(q));
     }
 
     if (filterStatus === 'playing') {
-      list = list.filter((p) => p.status === 'playing' || courtByParticipantId.has(p.participantId));
+      list = list.filter((p) => p && (p.status === 'playing' || courtByParticipantId.has(p.participantId)));
     } else if (filterStatus === 'waiting') {
-      list = list.filter((p) => p.status === 'waiting');
+      list = list.filter((p) => p && p.status === 'waiting');
     }
 
     return list.sort((a, b) => {
+      const winRateA = a?.winRate || 0;
+      const winRateB = b?.winRate || 0;
+      const winsA = a?.wins || 0;
+      const winsB = b?.wins || 0;
+      const gpA = a?.gamesPlayed || 0;
+      const gpB = b?.gamesPlayed || 0;
+
       if (sortBy === 'winRate') {
-        // High win rate first, tie-break by total wins, then games played
-        if (b.winRate !== a.winRate) return b.winRate - a.winRate;
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        return b.gamesPlayed - a.gamesPlayed;
+        if (winRateB !== winRateA) return winRateB - winRateA;
+        if (winsB !== winsA) return winsB - winsA;
+        return gpB - gpA;
       }
       if (sortBy === 'wins') {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        return b.winRate - a.winRate;
+        if (winsB !== winsA) return winsB - winsA;
+        return winRateB - winRateA;
       }
       if (sortBy === 'gamesPlayed') {
-        if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed;
-        return b.wins - a.wins;
+        if (gpB !== gpA) return gpB - gpA;
+        return winsB - winsA;
       }
       if (sortBy === 'pointDiff') {
-        const diffA = a.pointDifferential || 0;
-        const diffB = b.pointDifferential || 0;
+        const diffA = a?.pointDifferential || 0;
+        const diffB = b?.pointDifferential || 0;
         if (diffB !== diffA) return diffB - diffA;
-        return b.wins - a.wins;
+        return winsB - winsA;
       }
       if (sortBy === 'streak') {
-        const streakA = a.streak || 0;
-        const streakB = b.streak || 0;
+        const streakA = a?.streak || 0;
+        const streakB = b?.streak || 0;
         if (streakB !== streakA) return streakB - streakA;
-        return b.wins - a.wins;
+        return winsB - winsA;
       }
       return 0;
     });
@@ -101,11 +107,11 @@ export const LiveLeaderboard: React.FC<LiveLeaderboardProps> = ({
 
   // Summary leaders
   const topScorer = useMemo(() => {
-    return [...participants].sort((a, b) => (b.pointsScored || 0) - (a.pointsScored || 0))[0];
+    return [...(participants || [])].sort((a, b) => (b?.pointsScored || 0) - (a?.pointsScored || 0))[0] || null;
   }, [participants]);
 
   const topStreak = useMemo(() => {
-    return [...participants].sort((a, b) => (b.streak || 0) - (a.streak || 0))[0];
+    return [...(participants || [])].sort((a, b) => (b?.streak || 0) - (a?.streak || 0))[0] || null;
   }, [participants]);
 
   return (
@@ -246,9 +252,20 @@ export const LiveLeaderboard: React.FC<LiveLeaderboardProps> = ({
                       <span className="w-7 text-center font-black font-mono text-sm">
                         {rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`}
                       </span>
+                      {player.avatarUrl ? (
+                        <img
+                          src={player.avatarUrl}
+                          alt={player.name}
+                          className="w-9 h-9 rounded-2xl object-cover shrink-0 border border-slate-200 shadow-2xs"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-2xl bg-slate-200 text-slate-700 flex items-center justify-center font-black text-xs shrink-0">
+                          {(player.name?.trim() || player.firstName?.trim() || '?').charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-black text-slate-900 text-sm">{player.name}</span>
+                          <span className="font-black text-slate-900 text-sm">{player.name || 'Player'}</span>
                           {isHighlighted && (
                             <span className="text-[10px] font-black px-1.5 py-0.2 rounded-md bg-amber-200 text-amber-900">
                               YOU
@@ -347,8 +364,19 @@ export const LiveLeaderboard: React.FC<LiveLeaderboardProps> = ({
 
                       {/* Name */}
                       <td className="py-3 px-4 font-black text-slate-900">
-                        <div className="flex items-center gap-1.5">
-                          <span>{player.name}</span>
+                        <div className="flex items-center gap-2">
+                          {player.avatarUrl ? (
+                            <img
+                              src={player.avatarUrl}
+                              alt={player.name || 'Player'}
+                              className="w-7 h-7 rounded-xl object-cover shrink-0 border border-slate-200 shadow-2xs"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center font-black text-[10px] shrink-0">
+                              {(player.name?.trim() || player.firstName?.trim() || '?').charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span>{player.name || 'Player'}</span>
                           {isHighlighted && (
                             <span className="text-[10px] font-black px-1.5 py-0.2 rounded-md bg-amber-200 text-amber-900">
                               YOU

@@ -54,10 +54,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsed: OrganizerProfile = JSON.parse(saved);
         if (parsed?.email) {
           setOrganizerProfile(parsed);
-          // If Firebase is not yet connected to a session, initialize background anonymous user
-          if (!auth.currentUser) {
-            signInAnonymously(auth).catch((e) => console.warn('Background auth sync:', e));
-          }
         }
       }
     } catch (e) {
@@ -126,12 +122,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       displayName: trimmedEmail.split('@')[0],
     };
 
-    // Ensure an authenticated Firebase session exists so Firestore security rules allow writes
+    // Attempt anonymous sign-in only if supported by the Firebase project
     if (!auth.currentUser) {
       try {
         await signInAnonymously(auth);
-      } catch (err) {
-        console.warn('Anonymous session init for organizer access:', err);
+      } catch (err: any) {
+        // Suppress admin-restricted-operation if anonymous provider is disabled in Firebase console
+        const isRestricted = err?.code === 'auth/admin-restricted-operation' || err?.message?.includes('admin-restricted-operation');
+        if (!isRestricted) {
+          console.warn('Anonymous session init for organizer access:', err);
+        }
       }
     }
 
@@ -145,8 +145,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await signInAnonymously(auth);
       return res.user;
-    } catch (err) {
-      console.warn('Anonymous sign-in not available in this environment:', err);
+    } catch (err: any) {
+      const isRestricted = err?.code === 'auth/admin-restricted-operation' || err?.message?.includes('admin-restricted-operation');
+      if (!isRestricted) {
+        console.warn('Anonymous sign-in not available in this environment:', err);
+      }
       return null;
     }
   };

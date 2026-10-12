@@ -439,6 +439,21 @@ export async function completeMatch(
   const courtRef = doc(db, `sessions/${sessionId}/courts`, courtId);
 
   try {
+    // 1. Fetch match and court documents
+    const [matchSnap, courtSnap] = await Promise.all([
+      getDoc(matchRef),
+      getDoc(courtRef),
+    ]);
+
+    const matchData = matchSnap.exists() ? (matchSnap.data() as Match) : null;
+
+    // Gather all participant IDs associated with this match safely
+    const teamA = matchData?.teamA || [];
+    const teamB = matchData?.teamB || [];
+    const playerIds = Array.from(
+      new Set([...(matchData?.playerIds || []), ...teamA, ...teamB])
+    ).filter((id): id is string => Boolean(id && typeof id === 'string' && id.trim().length > 0));
+
     // Determine current max queue position
     let maxPos = 0;
     try {
@@ -451,37 +466,30 @@ export async function completeMatch(
       console.warn('Could not get max queue position:', e);
     }
 
-    await runTransaction(db, async (txn) => {
-      // 1. ALL READS FIRST (Firestore requires all reads before any writes)
-      const matchSnap = await txn.get(matchRef);
-      if (!matchSnap.exists()) throw new Error('Match record not found.');
-      const matchData = matchSnap.data() as Match;
-
-      if (matchData.status === 'completed') {
-        return;
+    // Calculate duration
+    let durationSeconds = 600; // default fallback 10m
+    if (matchData?.startedAt) {
+      const startMs = typeof matchData.startedAt?.toMillis === 'function'
+        ? matchData.startedAt.toMillis()
+        : (matchData.startedAt?.seconds ? matchData.startedAt.seconds * 1000 : new Date(matchData.startedAt).getTime());
+      if (!isNaN(startMs) && startMs > 0) {
+        durationSeconds = Math.max(60, Math.floor((Date.now() - startMs) / 1000));
       }
+    }
 
-      const courtSnap = await txn.get(courtRef);
+    // Fetch participant docs
+    const pDocs = await Promise.all(
+      playerIds.map((pId) => getDoc(doc(db, `sessions/${sessionId}/participants`, pId)))
+    );
 
-      // Read all participants upfront before any writes
-      const pSnaps = await Promise.all(
-        (matchData.playerIds || []).map((pId) =>
-          txn.get(doc(db, `sessions/${sessionId}/participants`, pId))
-        )
-      );
+    const winnerIds = (winningTeam === 'teamA' ? teamA : teamB) || [];
 
-      // 2. ALL WRITES AFTER ALL READS
-      // Calculate duration
-      let durationSeconds = 600; // default fallback 10m
-      if (matchData.startedAt) {
-        const startMs = typeof matchData.startedAt?.toMillis === 'function'
-          ? matchData.startedAt.toMillis()
-          : new Date(matchData.startedAt).getTime();
-        durationSeconds = Math.max(60, Math.floor((Date.now() - (isNaN(startMs) ? Date.now() : startMs)) / 1000));
-      }
+    // Use writeBatch for atomic and offline-compatible persistence
+    const batch = writeBatch(db);
 
-      // Update match
-      txn.update(matchRef, {
+    // 1. Update match
+    if (matchSnap.exists()) {
+      batch.update(matchRef, {
         status: 'completed',
         endedAt: serverTimestamp(),
         durationSeconds,
@@ -489,96 +497,112 @@ export async function completeMatch(
         score: score || null,
         updatedAt: serverTimestamp(),
       });
+    }
 
-      // Free up court
-      if (courtSnap.exists()) {
-        txn.update(courtRef, {
+    // 2. Free court
+    if (courtSnap.exists()) {
+      batch.update(courtRef, {
+        status: 'available',
+        currentMatchId: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // 3. Update participants and return them to the queue (4 IN / 4 OUT rule)
+    let offset = 1;
+    for (const pSnap of pDocs) {
+      if (!pSnap.exists()) continue;
+
+      const pData = pSnap.data() as Participant;
+      const pId = pData.participantId || pSnap.id;
+      const isWinner = winnerIds.includes(pId);
+      const gamesPlayed = (pData.gamesPlayed || 0) + 1;
+      const wins = (pData.wins || 0) + (isWinner ? 1 : 0);
+      const losses = (pData.losses || 0) + (isWinner ? 0 : 1);
+      const winRate = Math.round((wins / gamesPlayed) * 100);
+
+      // Point tracking
+      const isTeamA = teamA.includes(pId);
+      const teamScore = score ? (isTeamA ? score.teamA : score.teamB) : (isWinner ? 11 : 9);
+      const oppScore = score ? (isTeamA ? score.teamB : score.teamA) : (isWinner ? 9 : 11);
+      const pointsScored = (pData.pointsScored || 0) + teamScore;
+      const pointsConceded = (pData.pointsConceded || 0) + oppScore;
+      const pointDifferential = (pData.pointDifferential || 0) + (teamScore - oppScore);
+
+      // Streak tracking
+      const currentStreak = pData.streak || 0;
+      const streak = isWinner ? (currentStreak >= 0 ? currentStreak + 1 : 1) : 0;
+
+      // Calculate co-play sets for Social Mix tracking
+      const currentPartners = teamA.includes(pId)
+        ? teamA.filter((id) => id !== pId)
+        : teamB.filter((id) => id !== pId);
+      const currentOpponents = teamA.includes(pId) ? teamB : teamA;
+
+      const previousPartners = Array.from(new Set([...(pData.previousPartnerIds || []), ...currentPartners]));
+      const previousOpponents = Array.from(new Set([...(pData.previousOpponentIds || []), ...currentOpponents]));
+
+      const pRef = doc(db, `sessions/${sessionId}/participants`, pId);
+      batch.update(pRef, {
+        status: 'waiting',
+        currentCourtId: null,
+        currentMatchId: null,
+        gamesPlayed,
+        wins,
+        losses,
+        winRate,
+        pointsScored,
+        pointsConceded,
+        pointDifferential,
+        streak,
+        lastMatchResult: isWinner ? 'win' : 'loss',
+        lastPlayedAt: serverTimestamp(),
+        queuePosition: maxPos + offset,
+        queueEnteredAt: serverTimestamp(),
+        previousPartnerIds: previousPartners.slice(-20),
+        previousOpponentIds: previousOpponents.slice(-30),
+      });
+
+      offset++;
+    }
+
+    await batch.commit();
+  } catch (error) {
+    console.warn('completeMatch error, executing emergency direct court and match release:', error);
+    try {
+      if (matchId) {
+        await updateDoc(matchRef, {
+          status: 'completed',
+          winningTeam,
+          score: score || null,
+          endedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }).catch(() => {});
+      }
+      if (courtId) {
+        await updateDoc(courtRef, {
           status: 'available',
           currentMatchId: null,
           updatedAt: serverTimestamp(),
         });
       }
-
-      const winnerIds = winningTeam === 'teamA' ? matchData.teamA : matchData.teamB;
-
-      // Update each player's statistics and re-queue them (4 IN / 4 OUT rule)
-      let offset = 1;
-      for (const pSnap of pSnaps) {
-        if (!pSnap.exists()) continue;
-
-        const pData = pSnap.data() as Participant;
-        const pId = pData.participantId;
-        const isWinner = winnerIds.includes(pId);
-        const gamesPlayed = (pData.gamesPlayed || 0) + 1;
-        const wins = (pData.wins || 0) + (isWinner ? 1 : 0);
-        const losses = (pData.losses || 0) + (isWinner ? 0 : 1);
-        const winRate = Math.round((wins / gamesPlayed) * 100);
-
-        // Point tracking
-        const isTeamA = matchData.teamA.includes(pId);
-        const teamScore = score ? (isTeamA ? score.teamA : score.teamB) : (isWinner ? 11 : 9);
-        const oppScore = score ? (isTeamA ? score.teamB : score.teamA) : (isWinner ? 9 : 11);
-        const pointsScored = (pData.pointsScored || 0) + teamScore;
-        const pointsConceded = (pData.pointsConceded || 0) + oppScore;
-        const pointDifferential = (pData.pointDifferential || 0) + (teamScore - oppScore);
-
-        // Streak tracking
-        const currentStreak = pData.streak || 0;
-        const streak = isWinner ? (currentStreak >= 0 ? currentStreak + 1 : 1) : 0;
-
-        // Calculate co-play sets for Social Mix tracking
-        const currentPartners = matchData.teamA.includes(pId)
-          ? matchData.teamA.filter((id) => id !== pId)
-          : matchData.teamB.filter((id) => id !== pId);
-        const currentOpponents = matchData.teamA.includes(pId) ? matchData.teamB : matchData.teamA;
-
-        const previousPartners = Array.from(new Set([...(pData.previousPartnerIds || []), ...currentPartners]));
-        const previousOpponents = Array.from(new Set([...(pData.previousOpponentIds || []), ...currentOpponents]));
-
-        const pRef = doc(db, `sessions/${sessionId}/participants`, pId);
-        txn.update(pRef, {
-          status: 'waiting',
-          currentCourtId: null,
-          currentMatchId: null,
-          gamesPlayed,
-          wins,
-          losses,
-          winRate,
-          pointsScored,
-          pointsConceded,
-          pointDifferential,
-          streak,
-          lastMatchResult: isWinner ? 'win' : 'loss',
-          lastPlayedAt: serverTimestamp(),
-          queuePosition: maxPos + offset,
-          queueEnteredAt: serverTimestamp(),
-          previousPartnerIds: previousPartners.slice(-20),
-          previousOpponentIds: previousOpponents.slice(-30),
-        });
-
-        offset++;
-      }
-    });
-  } catch (error) {
-    console.warn('completeMatch transaction error, running direct recovery:', error);
-    // Direct recovery fallback: ensure court and match status are freed
-    try {
-      await updateDoc(matchRef, {
-        status: 'completed',
-        winningTeam,
-        score: score || null,
-        endedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      await updateDoc(courtRef, {
-        status: 'available',
-        currentMatchId: null,
-        updatedAt: serverTimestamp(),
-      });
     } catch (fallbackErr) {
       console.warn('Direct recovery error:', fallbackErr);
       handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/matches/${matchId}`);
     }
+  }
+}
+
+export async function forceResetCourt(sessionId: string, courtId: string): Promise<void> {
+  const courtRef = doc(db, `sessions/${sessionId}/courts`, courtId);
+  try {
+    await updateDoc(courtRef, {
+      status: 'available',
+      currentMatchId: null,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `sessions/${sessionId}/courts/${courtId}`);
   }
 }
 
@@ -659,49 +683,168 @@ export async function endSession(sessionId: string): Promise<void> {
 
 export async function bulkImportParticipants(
   sessionId: string,
-  names: string[],
+  rawLines: string[],
   defaultSkill: SkillLevel = 'intermediate'
 ): Promise<number> {
-  const batch = writeBatch(db);
   const participantsRef = collection(db, `sessions/${sessionId}/participants`);
 
-  const currentSnap = await getDocs(participantsRef);
   let maxPos = 0;
-  currentSnap.forEach((d) => {
-    const pos = d.data().queuePosition || 0;
-    if (pos > maxPos) maxPos = pos;
-  });
-
-  let count = 0;
-  for (const rawName of names) {
-    const name = rawName.trim();
-    if (!name) continue;
-
-    const pDoc = doc(participantsRef);
-    const p: Participant = {
-      participantId: pDoc.id,
-      sessionId,
-      name,
-      skillLevel: defaultSkill,
-      status: 'waiting',
-      queuePosition: maxPos + count + 1,
-      queueEnteredAt: serverTimestamp(),
-      gamesPlayed: 0,
-      wins: 0,
-      losses: 0,
-      winRate: 0,
-      resting: false,
-      checkedIn: true,
-      joinedAt: serverTimestamp(),
-      previousPartnerIds: [],
-      previousOpponentIds: [],
-    };
-    batch.set(pDoc, p);
-    count++;
+  try {
+    const currentSnap = await getDocs(participantsRef);
+    currentSnap.forEach((d) => {
+      const pos = d.data().queuePosition || 0;
+      if (pos > maxPos) maxPos = pos;
+    });
+  } catch (err) {
+    console.warn('Could not read existing max queue position, defaulting to 0:', err);
   }
 
-  if (count > 0) {
-    await batch.commit();
+  // Parse and sanitize raw lines (split multi-item strings by newlines, commas, semicolons)
+  const expandedLines: string[] = [];
+  for (const raw of rawLines) {
+    if (!raw || typeof raw !== 'string') continue;
+    // If line contains multiple items separated by commas or semicolons (and not just an annotation like "Davis, intermediate")
+    if (raw.includes('\n')) {
+      expandedLines.push(...raw.split('\n'));
+    } else if (raw.includes(';') || (raw.includes(',') && !raw.match(/,\s*(beginner|intermediate|advanced|beg|int|adv)\b/i))) {
+      expandedLines.push(...raw.split(/[,;]+/));
+    } else {
+      expandedLines.push(raw);
+    }
   }
-  return count;
+
+  const parsedPlayers: Array<{
+    fullName: string;
+    firstName: string;
+    surname: string;
+    skill: SkillLevel;
+  }> = [];
+
+  for (const raw of expandedLines) {
+    if (!raw || typeof raw !== 'string') continue;
+    // Strip leading numbering or bullet points like "1. ", "2) ", "- ", "• "
+    let clean = raw.trim().replace(/^[\d]+[\.\)\-\s]+/, '').replace(/^[\-\*•\+]\s+/, '').trim();
+    if (!clean) continue;
+
+    // Detect inline skill annotation if present: e.g. "Alex (Advanced)", "Ben - Beginner", "Carla, intermediate"
+    let playerSkill = defaultSkill;
+    const lower = clean.toLowerCase();
+    if (lower.includes('advanced') || lower.includes('(adv)')) {
+      playerSkill = 'advanced';
+      clean = clean.replace(/\(?\[?\b(advanced|adv)\b\)?\]?/i, '').replace(/[\-–,]\s*$/, '').trim();
+    } else if (lower.includes('beginner') || lower.includes('(beg)')) {
+      playerSkill = 'beginner';
+      clean = clean.replace(/\(?\[?\b(beginner|beg)\b\)?\]?/i, '').replace(/[\-–,]\s*$/, '').trim();
+    } else if (lower.includes('intermediate') || lower.includes('(int)')) {
+      playerSkill = 'intermediate';
+      clean = clean.replace(/\(?\[?\b(intermediate|int)\b\)?\]?/i, '').replace(/[\-–,]\s*$/, '').trim();
+    }
+
+    clean = clean.replace(/[,\(\)\[\]\-]+$/, '').trim();
+    if (!clean) continue;
+
+    // Split first and surname
+    const parts = clean.split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || 'Player';
+    const surname = parts.slice(1).join(' ');
+    const fullName = surname ? `${firstName} ${surname}` : firstName;
+
+    parsedPlayers.push({
+      fullName,
+      firstName,
+      surname,
+      skill: playerSkill,
+    });
+  }
+
+  if (parsedPlayers.length === 0) return 0;
+
+  // Chunk batches by 400 to prevent exceeding Firestore 500 operations batch limit
+  const CHUNK_SIZE = 400;
+  let totalCommitted = 0;
+
+  try {
+    for (let i = 0; i < parsedPlayers.length; i += CHUNK_SIZE) {
+      const chunk = parsedPlayers.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+
+      chunk.forEach((p, idx) => {
+        const pDoc = doc(participantsRef);
+        const queuePos = maxPos + totalCommitted + idx + 1;
+        const participantData: Participant = {
+          participantId: pDoc.id,
+          sessionId,
+          name: p.fullName,
+          firstName: p.firstName,
+          surname: p.surname,
+          skillLevel: p.skill,
+          status: 'waiting',
+          queuePosition: queuePos,
+          queueEnteredAt: serverTimestamp(),
+          gamesPlayed: 0,
+          wins: 0,
+          losses: 0,
+          winRate: 0,
+          pointsScored: 0,
+          pointsConceded: 0,
+          pointDifferential: 0,
+          streak: 0,
+          resting: false,
+          checkedIn: true,
+          joinedAt: serverTimestamp(),
+          previousPartnerIds: [],
+          previousOpponentIds: [],
+        };
+        batch.set(pDoc, participantData);
+      });
+
+      await batch.commit();
+      totalCommitted += chunk.length;
+    }
+
+    return totalCommitted;
+  } catch (error) {
+    console.warn('Bulk import batch write warning:', error);
+    if (totalCommitted > 0) return totalCommitted;
+    handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/participants`);
+  }
 }
+
+export async function updateParticipantAvatar(
+  sessionId: string,
+  participantId: string,
+  avatarUrl: string
+): Promise<void> {
+  const pRef = doc(db, `sessions/${sessionId}/participants`, participantId);
+  try {
+    await updateDoc(pRef, {
+      avatarUrl,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `sessions/${sessionId}/participants/${participantId}`);
+  }
+}
+
+export async function updateParticipantProfile(
+  sessionId: string,
+  participantId: string,
+  updates: {
+    name?: string;
+    firstName?: string;
+    surname?: string;
+    avatarUrl?: string;
+    skillLevel?: SkillLevel;
+  }
+): Promise<void> {
+  const pRef = doc(db, `sessions/${sessionId}/participants`, participantId);
+  try {
+    await updateDoc(pRef, {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `sessions/${sessionId}/participants/${participantId}`);
+  }
+}
+

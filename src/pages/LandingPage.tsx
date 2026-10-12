@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../services/firebase/config';
 import { Session, MatchingMode } from '../types';
-import { createSession, getSessionByJoinCode, getRecentLocalSessions } from '../services/sessions/sessionService';
+import { createSession, getSessionByJoinCode, getRecentLocalSessions, getCachedSession } from '../services/sessions/sessionService';
 import { useAuth } from '../context/AuthContext';
 import {
   ArrowRight,
@@ -19,6 +19,8 @@ import {
   Award,
 } from 'lucide-react';
 import { BrandLogo } from '../components/ui/BrandLogo';
+import { ProfileAvatarBadge } from '../components/profile/ProfileAvatarBadge';
+import { ProfileModal } from '../components/profile/ProfileModal';
 import { FloatingClayIcons } from '../components/ui/FloatingClayIcons';
 import { firePickleballBurst } from '../services/fx/pickleballBurst';
 import { OrganizerLoginModal } from '../components/auth/OrganizerLoginModal';
@@ -38,6 +40,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
 
   // Organizer Login Modal state
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // New Session Creation Form state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -51,6 +54,47 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
   useEffect(() => {
     fetchActiveSessions();
   }, []);
+
+  // Helper to open the best matching organizer terminal without collapsing
+  const handleOpenTerminal = async () => {
+    const activeId = localStorage.getItem('picklequeue_active_session_id');
+    if (activeId) {
+      const matched = sessions.find((s) => s.id === activeId);
+      if (matched) {
+        onSelectSession(matched.id, 'organizer');
+        return;
+      }
+      const cached = getCachedSession(activeId);
+      if (cached && cached.session && cached.session.status !== 'completed') {
+        onSelectSession(cached.session.id, 'organizer');
+        return;
+      }
+    }
+
+    if (sessions.length > 0) {
+      onSelectSession(sessions[0].id, 'organizer');
+      return;
+    }
+
+    const localRecent = getRecentLocalSessions();
+    if (localRecent.length > 0) {
+      onSelectSession(localRecent[0].id, 'organizer');
+      return;
+    }
+
+    if (loading) {
+      try {
+        const q = query(collection(db, 'sessions'), where('status', 'in', ['active', 'paused']), limit(5));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          onSelectSession(snap.docs[0].id, 'organizer');
+          return;
+        }
+      } catch {}
+    }
+
+    setShowCreateModal(true);
+  };
 
   const fetchActiveSessions = async () => {
     setLoading(true);
@@ -184,7 +228,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
       {/* Top Navbar */}
       <header className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-200/60 shadow-2xs">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             <BrandLogo size="md" />
             <div>
               <span className="font-black text-lg tracking-tight text-slate-900">PickleQueue</span>
@@ -212,14 +256,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                   <span className="hidden sm:inline">Host Session</span>
                 </button>
                 <button
-                  onClick={() => {
-                    if (sessions.length > 0) {
-                      onSelectSession(sessions[0].id, 'organizer');
-                    } else {
-                      setShowCreateModal(true);
-                    }
-                  }}
-                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+                  onClick={handleOpenTerminal}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5" />
                   <span>Terminal</span>
@@ -236,6 +274,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
+                <ProfileAvatarBadge
+                  size="sm"
+                  onClick={() => setShowProfileModal(true)}
+                />
               </div>
             ) : isOrganizer ? (
               <div className="flex items-center gap-2">
@@ -252,14 +294,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                   <span className="hidden sm:inline">Host Session</span>
                 </button>
                 <button
-                  onClick={() => {
-                    if (sessions.length > 0) {
-                      onSelectSession(sessions[0].id, 'organizer');
-                    } else {
-                      setShowCreateModal(true);
-                    }
-                  }}
-                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+                  onClick={handleOpenTerminal}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5" />
                   <span>Terminal</span>
@@ -272,25 +308,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
+                <ProfileAvatarBadge
+                  size="sm"
+                  onClick={() => setShowProfileModal(true)}
+                />
               </div>
             ) : (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Host Session</span>
                 </button>
                 <button
-                  onClick={() => {
-                    if (sessions.length > 0) {
-                      onSelectSession(sessions[0].id, 'organizer');
-                    } else {
-                      setShowCreateModal(true);
-                    }
-                  }}
-                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-800 text-xs font-bold flex items-center gap-1 shadow-2xs"
+                  onClick={handleOpenTerminal}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-800 text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5 text-emerald-600" />
                   <span className="hidden sm:inline">Open Terminal</span>
@@ -302,6 +336,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                   <LogIn className="w-4 h-4 text-emerald-600" />
                   <span>Organizer Login</span>
                 </button>
+                <ProfileAvatarBadge
+                  size="sm"
+                  onClick={() => setShowProfileModal(true)}
+                />
               </div>
             )}
           </div>
@@ -642,6 +680,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
           }
         }}
       />
+
+      {/* Player Profile & Photo Upload Modal */}
+      {showProfileModal && (
+        <ProfileModal
+          isOpen={true}
+          onClose={() => setShowProfileModal(false)}
+        />
+      )}
     </div>
   );
 };

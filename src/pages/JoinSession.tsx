@@ -4,6 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { SkillLevel, Participant } from '../types';
 import { joinSessionAsParticipant } from '../services/sessions/sessionService';
 import { BrandLogo } from '../components/ui/BrandLogo';
+import { ProfileAvatarBadge } from '../components/profile/ProfileAvatarBadge';
+import { ProfileModal } from '../components/profile/ProfileModal';
+import { usePlayerProfile } from '../services/profile/profileService';
 import {
   ArrowRight,
   UserCheck,
@@ -26,13 +29,28 @@ export const JoinSession: React.FC<JoinSessionProps> = ({
 }) => {
   const { session, participants, waitingQueue, setCurrentParticipantId } = useSession();
   const { signInAsAnonymousPlayer } = useAuth();
+  const { profile, updateProfile } = usePlayerProfile();
 
-  const [firstName, setFirstName] = useState('');
-  const [surname, setSurname] = useState('');
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>('intermediate');
+  const [firstName, setFirstName] = useState(() => profile.firstName || '');
+  const [surname, setSurname] = useState(() => profile.surname || '');
+  const [skillLevel, setSkillLevel] = useState<SkillLevel>(() => profile.skillLevel || 'intermediate');
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDifferentPlayerForm, setShowDifferentPlayerForm] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Sync with profile if updated from modal
+  useEffect(() => {
+    if (profile.firstName && !firstName) {
+      setFirstName(profile.firstName);
+    }
+    if (profile.surname && !surname) {
+      setSurname(profile.surname);
+    }
+    if (profile.skillLevel) {
+      setSkillLevel(profile.skillLevel);
+    }
+  }, [profile.firstName, profile.surname, profile.skillLevel]);
 
   // Duplicate entry warning for a typed name
   const [duplicateWarning, setDuplicateWarning] = useState<Participant | null>(null);
@@ -130,6 +148,14 @@ export const JoinSession: React.FC<JoinSessionProps> = ({
         firstName: cleanFirst,
         surname: cleanSurname,
         skillLevel,
+        avatarUrl: profile.avatarUrl || '',
+      });
+
+      // Update local profile with latest confirmed name & skill
+      updateProfile({
+        firstName: cleanFirst,
+        surname: cleanSurname,
+        skillLevel,
       });
 
       if (newParticipant?.participantId) {
@@ -162,8 +188,12 @@ export const JoinSession: React.FC<JoinSessionProps> = ({
     <div className="min-h-screen bg-slate-100 flex flex-col justify-between max-w-md mx-auto p-4 sm:p-6">
       {/* Top Header */}
       <header className="py-3 text-center">
-        <div className="flex justify-center mb-2.5">
+        <div className="flex items-center justify-center gap-3.5 mb-2.5">
           <BrandLogo size="lg" />
+          <ProfileAvatarBadge
+            size="lg"
+            onClick={() => setShowProfileModal(true)}
+          />
         </div>
         <h1 className="text-xl font-black text-slate-900 tracking-tight">PickleQueue</h1>
         <p className="text-xs text-slate-500 font-medium">Live Court Queue System</p>
@@ -254,6 +284,30 @@ export const JoinSession: React.FC<JoinSessionProps> = ({
         ) : (
           /* JOIN FORM WITH STRICT FIRST NAME & SURNAME */
           <form onSubmit={handleJoin} className="space-y-4">
+            {/* Quick Profile Photo Reflection Banner */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80 clay-inset">
+              <div className="flex items-center gap-2.5">
+                <ProfileAvatarBadge
+                  size="sm"
+                  onClick={() => setShowProfileModal(true)}
+                />
+                <div>
+                  <span className="text-xs font-black text-slate-800 block">
+                    {profile.avatarUrl ? 'Photo Uploaded' : 'Add Player Photo'}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium block">
+                    Reflects next to the logo & on queue
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(true)}
+                className="px-2.5 py-1 rounded-xl clay-btn clay-btn-secondary text-[11px] font-bold text-emerald-700 cursor-pointer"
+              >
+                {profile.avatarUrl ? 'Change' : 'Upload'}
+              </button>
+            </div>
             {/* DUPLICATE WARNING CALLOUT */}
             {duplicateWarning && (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-2 animate-in fade-in">
@@ -390,6 +444,20 @@ export const JoinSession: React.FC<JoinSessionProps> = ({
           Cancel & Return Home
         </button>
       </footer>
+
+      {/* Player Profile & Image Upload Modal */}
+      {showProfileModal && (
+        <ProfileModal
+          isOpen={true}
+          onClose={() => setShowProfileModal(false)}
+          sessionId={session?.id}
+          onSaved={(p) => {
+            if (p.firstName) setFirstName(p.firstName);
+            if (p.surname) setSurname(p.surname);
+            if (p.skillLevel) setSkillLevel(p.skillLevel);
+          }}
+        />
+      )}
     </div>
   );
 };
