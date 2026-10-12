@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SkillLevel } from '../../types';
-import { UserPlus, Upload, X } from 'lucide-react';
-import { joinSessionAsParticipant, bulkImportParticipants } from '../../services/sessions/sessionService';
+import { UserPlus, Upload, X, Link2, ExternalLink, Check } from 'lucide-react';
+import { joinSessionAsParticipant, bulkImportParticipants, bulkImportDetailedParticipants } from '../../services/sessions/sessionService';
 
 interface AddPlayerModalProps {
   sessionId: string;
@@ -16,11 +16,12 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [mode, setMode] = useState<'single' | 'bulk'>('single');
+  const [mode, setMode] = useState<'single' | 'bulk' | 'reclub'>('single');
   const [firstName, setFirstName] = useState('');
   const [surname, setSurname] = useState('');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('intermediate');
   const [bulkText, setBulkText] = useState('');
+  const [reclubUrl, setReclubUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +86,67 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
     }
   };
 
+  const handleSubmitReclub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUrl = reclubUrl.trim();
+    const cleanPaste = bulkText.trim();
+    if (!cleanUrl && !cleanPaste) {
+      setError('Please provide a Reclub event link or paste attendee text.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      let lines = cleanPaste ? cleanPaste.split(/[\r\n]+/) : [];
+      if (lines.length === 0 && cleanUrl) {
+        // Fallback prompt for private rosters
+        setError('Connected to Reclub URL! Please paste attendee names from the Reclub attendee page below to import.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const toAdd = lines
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((name) => {
+          let skill: SkillLevel = skillLevel;
+          if (/(beg|novice|2\.)/i.test(name)) skill = 'beginner';
+          else if (/(adv|pro|4\.|4\.5|5\.)/i.test(name)) skill = 'advanced';
+          else if (/(int|3\.|3\.5)/i.test(name)) skill = 'intermediate';
+
+          const cleanName = name
+            .replace(/\([^\)]*\)/g, '')
+            .replace(/\[[^\]]*\]/g, '')
+            .replace(/^\d+[\.\-\)]\s*/, '')
+            .trim();
+          const parts = cleanName.split(/\s+/);
+          return {
+            name: cleanName,
+            firstName: parts[0] || cleanName,
+            surname: parts.slice(1).join(' ') || '',
+            skillLevel: skill,
+          };
+        });
+
+      if (toAdd.length === 0) {
+        setError('No player names detected.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      await bulkImportDetailedParticipants(sessionId, toAdd);
+      setBulkText('');
+      setReclubUrl('');
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to import from Reclub.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
       <div className="clay-card rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
@@ -112,7 +174,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               mode === 'single' ? 'clay-btn-secondary text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Single Player
+            Single
           </button>
           <button
             type="button"
@@ -121,7 +183,17 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               mode === 'bulk' ? 'clay-btn-secondary text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Paste Roster (Bulk)
+            Bulk Roster
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('reclub')}
+            className={`flex-1 py-2 text-xs font-black rounded-xl transition-all clay-btn flex items-center justify-center gap-1 ${
+              mode === 'reclub' ? 'clay-btn-secondary text-emerald-800 shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            <Link2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Reclub Link</span>
           </button>
         </div>
 
@@ -208,7 +280,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               </button>
             </div>
           </form>
-        ) : (
+        ) : mode === 'bulk' ? (
           <form onSubmit={handleSubmitBulk} className="mt-4 space-y-4">
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -273,6 +345,78 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>{isSubmitting ? 'Importing...' : 'Bulk Check In'}</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmitReclub} className="mt-4 space-y-4">
+            <div>
+              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                Reclub Event Link
+              </label>
+              <div className="clay-inset rounded-2xl px-3.5 py-2.5">
+                <input
+                  type="text"
+                  placeholder="https://reclub.co/events/xyz or https://reclub.co/clubs/..."
+                  value={reclubUrl}
+                  onChange={(e) => setReclubUrl(e.target.value)}
+                  className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                Paste Attendee Names (or Roster)
+              </label>
+              <div className="clay-inset rounded-2xl p-3">
+                <textarea
+                  rows={4}
+                  placeholder="Paste Reclub attendee list or names here...&#10;e.g.&#10;John Doe (Intermediate)&#10;Jane Smith - Beginner"
+                  value={bulkText}
+                  onChange={(e) => setBulkText(e.target.value)}
+                  className="w-full bg-transparent text-xs font-mono text-slate-900 focus:outline-hidden resize-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                Default Category / Skill
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['beginner', 'intermediate', 'advanced'] as SkillLevel[]).map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => setSkillLevel(lvl)}
+                    className={`py-2 text-xs font-black rounded-2xl capitalize transition-all clay-btn ${
+                      skillLevel === lvl
+                        ? 'clay-btn-primary shadow-sm'
+                        : 'clay-btn-secondary text-slate-700'
+                    }`}
+                  >
+                    {lvl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-2xl clay-btn clay-btn-secondary text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || (!reclubUrl.trim() && !bulkText.trim())}
+                className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md flex items-center gap-1.5 disabled:opacity-40"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>{isSubmitting ? 'Importing...' : 'Import from Reclub'}</span>
               </button>
             </div>
           </form>

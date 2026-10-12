@@ -7,7 +7,7 @@ interface SpeechSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AnnouncementSettings;
-  onSave: (settings: AnnouncementSettings) => void;
+  onSave: (settings: AnnouncementSettings) => Promise<void> | void;
 }
 
 export const SpeechSettingsModal: React.FC<SpeechSettingsModalProps> = ({
@@ -16,16 +16,28 @@ export const SpeechSettingsModal: React.FC<SpeechSettingsModalProps> = ({
   settings,
   onSave,
 }) => {
-  const [enabled, setEnabled] = useState(settings.enabled);
-  const [volume, setVolume] = useState(settings.volume);
-  const [rate, setRate] = useState(settings.rate);
-  const [pitch, setPitch] = useState(settings.pitch);
-  const [voiceURI, setVoiceURI] = useState(settings.voiceURI || '');
+  const [enabled, setEnabled] = useState(settings?.enabled ?? true);
+  const [volume, setVolume] = useState(settings?.volume ?? 1);
+  const [rate, setRate] = useState(settings?.rate ?? 1);
+  const [pitch, setPitch] = useState(settings?.pitch ?? 1);
+  const [voiceURI, setVoiceURI] = useState(settings?.voiceURI || '');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setVoices(speechService.getVoices());
   }, [isOpen]);
+
+  useEffect(() => {
+    if (settings) {
+      setEnabled(settings.enabled ?? true);
+      setVolume(settings.volume ?? 1);
+      setRate(settings.rate ?? 1);
+      setPitch(settings.pitch ?? 1);
+      setVoiceURI(settings.voiceURI || '');
+    }
+  }, [settings]);
 
   if (!isOpen) return null;
 
@@ -36,15 +48,24 @@ export const SpeechSettingsModal: React.FC<SpeechSettingsModalProps> = ({
     );
   };
 
-  const handleSave = () => {
-    onSave({
-      enabled,
-      volume,
-      rate,
-      pitch,
-      voiceURI,
-    });
-    onClose();
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({
+        enabled,
+        volume,
+        rate,
+        pitch,
+        voiceURI,
+      });
+      onClose();
+    } catch (err: any) {
+      console.error('Error saving speech settings:', err);
+      setSaveError(err?.message || 'Failed to save speech settings. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -147,6 +168,12 @@ export const SpeechSettingsModal: React.FC<SpeechSettingsModalProps> = ({
             <Play className="w-3.5 h-3.5 fill-current text-emerald-600" />
             <span>Test Voice Announcement</span>
           </button>
+
+          {saveError && (
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold animate-in fade-in">
+              {saveError}
+            </div>
+          )}
         </div>
 
         {/* Modal Actions */}
@@ -154,6 +181,7 @@ export const SpeechSettingsModal: React.FC<SpeechSettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            disabled={isSaving}
             className="px-4 py-2.5 rounded-2xl clay-btn clay-btn-secondary text-xs font-bold"
           >
             Cancel
@@ -161,9 +189,10 @@ export const SpeechSettingsModal: React.FC<SpeechSettingsModalProps> = ({
           <button
             type="button"
             onClick={handleSave}
-            className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md"
+            disabled={isSaving}
+            className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md disabled:opacity-50 flex items-center gap-1.5"
           >
-            Apply Settings
+            <span>{isSaving ? 'Saving Settings...' : 'Apply & Save Settings'}</span>
           </button>
         </div>
       </div>

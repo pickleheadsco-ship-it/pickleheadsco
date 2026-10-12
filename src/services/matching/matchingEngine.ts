@@ -82,10 +82,35 @@ export function getAllDoublesPairingOptions(fourPlayers: Participant[]): Pairing
     const b0 = combo.teamB[0];
     const b1 = combo.teamB[1];
 
-    if (a0?.participantId && a1?.participantId && a0.previousPartnerIds?.includes(a1.participantId)) {
+    // Locked-in Partners Rule: If players are locked-in partners, they MUST be on the same team!
+    const isLockedPair = (pX?: Participant, pY?: Participant) =>
+      Boolean(
+        pX && pY && pX.participantId && pY.participantId &&
+        ((pX.lockedPartnerId && pX.lockedPartnerId === pY.participantId) ||
+         (pY.lockedPartnerId && pY.lockedPartnerId === pX.participantId))
+      );
+
+    const aIsLocked = isLockedPair(a0, a1);
+    const bIsLocked = isLockedPair(b0, b1);
+
+    // If any pair across opposite teams is locked, heavy penalty!
+    const crossLocked =
+      isLockedPair(a0, b0) ||
+      isLockedPair(a0, b1) ||
+      isLockedPair(a1, b0) ||
+      isLockedPair(a1, b1);
+
+    if (crossLocked) {
+      partnerPenalty += 50000; // Strictly disallow breaking locked partners across opposing teams
+    }
+    if (aIsLocked || bIsLocked) {
+      partnerPenalty -= 20000; // Strong bonus for keeping locked partners together
+    }
+
+    if (a0?.participantId && a1?.participantId && a0.previousPartnerIds?.includes(a1.participantId) && !aIsLocked) {
       partnerPenalty += 30;
     }
-    if (b0?.participantId && b1?.participantId && b0.previousPartnerIds?.includes(b1.participantId)) {
+    if (b0?.participantId && b1?.participantId && b0.previousPartnerIds?.includes(b1.participantId) && !bIsLocked) {
       partnerPenalty += 30;
     }
 
@@ -218,6 +243,48 @@ export function partitionSocialMixTeams(fourPlayers: Participant[]): {
 }
 
 /**
+ * Resolves the top 4 candidates from the queue, guaranteeing that locked-in partners
+ * are pulled in together if both are waiting in the eligible pool.
+ */
+export function resolveNextFourWithLockedPartners(eligible: Participant[]): Participant[] {
+  if (eligible.length < 4) return eligible;
+
+  const selected: Participant[] = [];
+  const selectedIds = new Set<string>();
+
+  for (const player of eligible) {
+    if (selected.length >= 4) break;
+    if (selectedIds.has(player.participantId)) continue;
+
+    selected.push(player);
+    selectedIds.add(player.participantId);
+
+    // If player has a locked partner and we have space, pull their partner immediately
+    if (player.lockedPartnerId && selected.length < 4) {
+      const partner = eligible.find(
+        (p) => p.participantId === player.lockedPartnerId && !selectedIds.has(p.participantId)
+      );
+      if (partner) {
+        selected.push(partner);
+        selectedIds.add(partner.participantId);
+      }
+    }
+  }
+
+  if (selected.length < 4) {
+    for (const player of eligible) {
+      if (selected.length >= 4) break;
+      if (!selectedIds.has(player.participantId)) {
+        selected.push(player);
+        selectedIds.add(player.participantId);
+      }
+    }
+  }
+
+  return selected.slice(0, 4);
+}
+
+/**
  * Core Matching Algorithm Dispatcher
  * Returns an optimal group match proposal based on the active matching mode.
  */
@@ -251,14 +318,17 @@ export function getNextGroup(
 
   // MODE 1: BALANCED (Fair skill delta + partner rotation)
   if (matchingMode === 'balanced') {
-    const topFour = eligible.slice(0, 4);
+    const topFour = resolveNextFourWithLockedPartners(eligible);
     const { teamA, teamB, skillDelta } = partitionBalancedTeams(topFour);
+    const hasLocked = topFour.some((p) => p.lockedPartnerId);
     return buildProposal(
       topFour,
       teamA,
       teamB,
       skillDelta,
-      `Next 4 in queue. Balanced partners (skill Δ: ${skillDelta}).`
+      hasLocked
+        ? `Next up with Locked-in Partners preserved (skill Δ: ${skillDelta}).`
+        : `Next 4 in queue. Balanced partners (skill Δ: ${skillDelta}).`
     );
   }
 

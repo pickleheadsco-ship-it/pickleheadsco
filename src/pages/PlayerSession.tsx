@@ -7,14 +7,14 @@ import { BrandLogo } from '../components/ui/BrandLogo';
 import { ProfileAvatarBadge } from '../components/profile/ProfileAvatarBadge';
 import { ProfileModal } from '../components/profile/ProfileModal';
 import { LiveLeaderboard } from '../components/leaderboard/LiveLeaderboard';
-import { MatchResultModal } from '../components/matches/MatchResultModal';
+import { PlayerPairingsView } from '../components/pairings/PlayerPairingsView';
+import { MatchHistoryView } from '../components/matches/MatchHistoryView';
 import { NextPlayModal } from '../components/notifications/NextPlayModal';
 import { PostGameLeaderboardModal } from '../components/notifications/PostGameLeaderboardModal';
 import { notificationService } from '../services/notifications/notificationService';
 import {
   updateParticipantRestStatus,
   leaveSession,
-  completeMatch,
 } from '../services/sessions/sessionService';
 import {
   Sparkles,
@@ -28,6 +28,7 @@ import {
   Bell,
   BellRing,
   ArrowRight,
+  Activity,
 } from 'lucide-react';
 
 interface PlayerSessionProps {
@@ -46,6 +47,7 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
     participants,
     waitingQueue,
     activeMatches,
+    matches,
     nextProposal,
     currentParticipant,
     setCurrentParticipantId,
@@ -55,9 +57,9 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
 
   const [matchAcknowledged, setMatchAcknowledged] = useState(false);
   const [isUpdatingRest, setIsUpdatingRest] = useState(false);
-  const [showRecordResultModal, setShowRecordResultModal] = useState(false);
   const [showPostGameModal, setShowPostGameModal] = useState(false);
-  const [playerTab, setPlayerTab] = useState<'myQueue' | 'leaderboard'>('myQueue');
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [playerTab, setPlayerTab] = useState<'myQueue' | 'pairings' | 'players' | 'history' | 'leaderboard'>('myQueue');
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Push notifications & Next Play Pop-Up state
@@ -239,32 +241,19 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
     }
   };
 
-  // Leave session
-  const handleLeave = async () => {
-    if (confirm('Leave this open-play session? Your match history is saved.')) {
-      try {
+  // Leave queue cleanly with confirmation
+  const confirmLeaveQueue = async () => {
+    setShowLeaveModal(false);
+    try {
+      if (currentParticipant) {
         await leaveSession(sessionId, currentParticipant.participantId);
         localStorage.removeItem(`picklequeue_session_${sessionId}_participant_id`);
         setCurrentParticipantId(null);
-        onLeaveToHome();
-      } catch (err) {
-        console.error(err);
       }
-    }
-  };
-
-  const handleEndMatchSubmit = async (
-    winningTeam: 'teamA' | 'teamB',
-    score?: { teamA: number; teamB: number }
-  ) => {
-    if (!activeCourt || !activeMatch) return;
-    try {
-      await completeMatch(sessionId, activeMatch.matchId, activeCourt.courtId, winningTeam, score);
-      setShowRecordResultModal(false);
-      setShowPostGameModal(true);
+      onLeaveToHome();
     } catch (err) {
-      console.error('Error completing match from player session:', err);
-      setShowRecordResultModal(false);
+      console.error('Error leaving session queue:', err);
+      onLeaveToHome();
     }
   };
 
@@ -321,24 +310,50 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
           </div>
         </div>
 
-        {/* View Switcher: My Queue vs Live Leaderboard */}
-        <div className="flex clay-inset rounded-2xl p-1 mt-2.5 text-xs font-black">
+        {/* View Switcher: My Court vs Pairings vs Players vs History vs Live Leaderboard */}
+        <div className="flex items-center gap-1 clay-inset rounded-2xl p-1 mt-2.5 text-[11px] font-black overflow-x-auto">
           <button
             onClick={() => setPlayerTab('myQueue')}
-            className={`flex-1 py-1.5 rounded-xl transition-all clay-btn ${
+            className={`py-1.5 px-2.5 rounded-xl transition-all clay-btn flex items-center justify-center gap-1 shrink-0 ${
               playerTab === 'myQueue' ? 'clay-btn-primary text-white shadow-xs' : 'text-slate-600'
             }`}
           >
-            My Queue & Courts
+            <Activity className="w-3.5 h-3.5" />
+            <span>My Court</span>
+          </button>
+          <button
+            onClick={() => setPlayerTab('pairings')}
+            className={`py-1.5 px-2.5 rounded-xl transition-all clay-btn flex items-center justify-center gap-1 shrink-0 ${
+              playerTab === 'pairings' ? 'clay-btn-primary text-white shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-sky-500" />
+            <span>Pairings</span>
+          </button>
+          <button
+            onClick={() => setPlayerTab('players')}
+            className={`py-1.5 px-2.5 rounded-xl transition-all clay-btn flex items-center justify-center gap-1 shrink-0 ${
+              playerTab === 'players' ? 'clay-btn-primary text-white shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            <span>Players</span>
+          </button>
+          <button
+            onClick={() => setPlayerTab('history')}
+            className={`py-1.5 px-2.5 rounded-xl transition-all clay-btn flex items-center justify-center gap-1 shrink-0 ${
+              playerTab === 'history' ? 'clay-btn-primary text-white shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            <span>History</span>
           </button>
           <button
             onClick={() => setPlayerTab('leaderboard')}
-            className={`flex-1 py-1.5 rounded-xl transition-all clay-btn flex items-center justify-center gap-1.5 ${
+            className={`py-1.5 px-2.5 rounded-xl transition-all clay-btn flex items-center justify-center gap-1 shrink-0 ${
               playerTab === 'leaderboard' ? 'clay-btn-primary text-white shadow-xs' : 'text-slate-600'
             }`}
           >
             <Trophy className="w-3.5 h-3.5 text-amber-500" />
-            <span>Live Leaderboard</span>
+            <span>Leaderboard</span>
           </button>
         </div>
       </header>
@@ -353,6 +368,91 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
               activeMatches={activeMatches}
               highlightParticipantId={currentParticipant.participantId}
             />
+          </div>
+        ) : playerTab === 'pairings' ? (
+          <PlayerPairingsView
+            courts={courts}
+            activeMatches={activeMatches}
+            participants={participants}
+            nextProposal={nextProposal}
+            currentParticipantId={currentParticipant.participantId}
+            isOrganizer={false}
+          />
+        ) : playerTab === 'history' ? (
+          <div className="space-y-3">
+            <MatchHistoryView
+              matches={matches}
+              participants={participants}
+              courts={courts}
+              highlightParticipantId={currentParticipant.participantId}
+            />
+          </div>
+        ) : playerTab === 'players' ? (
+          <div className="clay-card rounded-3xl p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="font-black text-sm text-slate-900">
+                Session Roster ({participants.filter((p) => p.status !== 'left').length})
+              </h3>
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl clay-btn"
+              >
+                Edit My Profile / Category
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {participants
+                .filter((p) => p.status !== 'left')
+                .map((p) => {
+                  const isYou = p.participantId === currentParticipant.participantId;
+                  return (
+                    <div
+                      key={p.participantId}
+                      className={`p-3 rounded-2xl flex items-center justify-between gap-2 border transition-all ${
+                        isYou
+                          ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-400/30'
+                          : 'bg-white border-slate-200/70'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-black text-xs shrink-0">
+                          {p.avatarUrl ? (
+                            <img src={p.avatarUrl} alt={p.name} className="w-full h-full object-cover rounded-full" />
+                          ) : (
+                            p.name.slice(0, 2).toUpperCase()
+                          )}
+                        </div>
+                        <div className="truncate">
+                          <div className="flex items-center gap-1.5 font-black text-xs text-slate-900 truncate">
+                            <span>{p.name}</span>
+                            {isYou && (
+                              <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-200 px-1.5 rounded-sm">
+                                YOU
+                              </span>
+                            )}
+                            {p.lockedPartnerId && <span title="Locked partner">🔒</span>}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {p.status === 'playing'
+                              ? '🎾 Playing on court'
+                              : p.resting
+                              ? '☕ Resting'
+                              : `Queue Rank #${p.queuePosition || '—'}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <SkillBadge skill={p.skillLevel} />
+                        <span className="text-xs font-mono font-bold text-slate-700">
+                          {p.wins || 0}W
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         ) : (
           <>
@@ -472,24 +572,33 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
                     </div>
                   </div>
                 </div>
-                <SkillBadge skill={currentParticipant.skillLevel} />
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(true)}
+                  className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Click to view standing or change category"
+                >
+                  <SkillBadge skill={currentParticipant.skillLevel} />
+                  <span className="text-[10px] font-black text-slate-500 underline">Edit</span>
+                </button>
               </div>
 
               {/* If currently playing */}
               {activeCourt && activeMatch ? (
-                <div className="clay-subcard rounded-2xl p-4 text-center border border-emerald-200">
-                  <span className="text-xs font-bold text-emerald-800 block">Playing on</span>
+                <div className="clay-subcard rounded-2xl p-4 text-center border border-emerald-200 bg-emerald-50/40">
+                  <span className="text-xs font-black text-emerald-800 uppercase tracking-wider block">Currently Playing on</span>
                   <span className="text-2xl font-black text-emerald-950 mt-0.5 block">{activeCourt.name}</span>
-                  <div className="mt-2.5 mb-3.5 inline-block">
+                  <div className="mt-2.5 mb-2 inline-block">
                     <MatchTimer startedAt={activeMatch?.startedAt} className="text-xs" />
                   </div>
-                  <button
-                    onClick={() => setShowRecordResultModal(true)}
-                    className="w-full py-3.5 clay-btn clay-btn-primary rounded-2xl text-xs font-black shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Trophy className="w-4 h-4" />
-                    <span>End Match & Record Score</span>
-                  </button>
+                  <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200 text-slate-700 text-xs font-bold space-y-1">
+                    <div className="text-[11px] text-emerald-800 font-black uppercase tracking-wider">
+                      🎾 Doubles Match In Progress
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      Official scores & court rotation are entered by court staff/organizer terminal upon game finish.
+                    </div>
+                  </div>
                 </div>
               ) : currentParticipant.resting ? (
                 /* If resting */
@@ -543,7 +652,7 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
                 </div>
               </div>
 
-              {/* Player Controls (Rest / Resume / Leave) */}
+              {/* Player Controls (Rest / Resume / Leave Queue) */}
               <div className="mt-4 flex items-center gap-2.5">
                 {!activeCourt && (
                   <button
@@ -568,11 +677,12 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
                 )}
 
                 <button
-                  onClick={handleLeave}
-                  className="py-3 px-4 rounded-2xl clay-btn clay-btn-secondary text-slate-600 text-xs font-bold flex items-center gap-1.5"
+                  onClick={() => setShowLeaveModal(true)}
+                  className="py-3 px-4 rounded-2xl clay-btn clay-btn-secondary text-slate-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  title="Leave queue"
                 >
                   <LogOut className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Leave</span>
+                  <span>Leave Queue</span>
                 </button>
               </div>
             </div>
@@ -656,16 +766,32 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
         )}
       </main>
 
-      {/* Player Match Result Modal */}
-      {showRecordResultModal && activeCourt && activeMatch && (
-        <MatchResultModal
-          court={activeCourt}
-          match={activeMatch}
-          participants={participants}
-          isOpen={true}
-          onClose={() => setShowRecordResultModal(false)}
-          onSubmit={handleEndMatchSubmit}
-        />
+      {/* Leave Queue Confirmation Dialog */}
+      {showLeaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="clay-card rounded-3xl max-w-sm w-full p-5 sm:p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-lg font-black text-slate-900">Leave Session Queue?</h3>
+            <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">
+              Your match stats and game history are saved. You can rejoin or check in anytime. The active open-play session will continue running for other players.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowLeaveModal(false)}
+                className="px-4 py-2.5 rounded-2xl clay-btn clay-btn-secondary text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmLeaveQueue}
+                className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-danger text-white text-xs font-black shadow-md"
+              >
+                Yes, Leave Queue
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Pop up screen upon Next Play */}
@@ -696,6 +822,9 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
           onClose={() => setShowProfileModal(false)}
           sessionId={sessionId}
           participantId={currentParticipant?.participantId}
+          participant={currentParticipant}
+          allParticipants={participants}
+          matches={matches}
         />
       )}
     </div>

@@ -536,7 +536,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                       Join as Player
                     </button>
                     <button
-                      onClick={() => onSelectSession(sess.id, 'organizer')}
+                      onClick={() => {
+                        if (isAdmin || isOrganizer) {
+                          onSelectSession(sess.id, 'organizer');
+                        } else {
+                          setShowLoginModal(true);
+                        }
+                      }}
                       className="w-full sm:flex-1 py-2.5 rounded-xl clay-btn clay-btn-primary text-white text-xs font-black text-center shadow-md"
                     >
                       Organizer Terminal

@@ -4,7 +4,10 @@ import { Participant, Match } from '../types';
 import { SkillBadge } from '../components/ui/Badge';
 import { BrandLogo } from '../components/ui/BrandLogo';
 import { ProfileAvatarBadge } from '../components/profile/ProfileAvatarBadge';
-import { Trophy, ArrowLeft } from 'lucide-react';
+import { ChampionsPodium } from '../components/podium/ChampionsPodium';
+import { MatchHistoryView } from '../components/matches/MatchHistoryView';
+import { ProfileModal } from '../components/profile/ProfileModal';
+import { Trophy, ArrowLeft, Layers, Users } from 'lucide-react';
 
 interface SessionSummaryProps {
   onBackToHome: () => void;
@@ -17,7 +20,8 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
 }) => {
   const { session, participants, matches, courts } = useSession();
   const [sortBy, setSortBy] = useState<'winRate' | 'wins' | 'games'>('winRate');
-  const [activeTab, setActiveTab] = useState<'standings' | 'matches'>('standings');
+  const [activeTab, setActiveTab] = useState<'podium' | 'standings' | 'matches'>('podium');
+  const [selectedPlayer, setSelectedPlayer] = useState<Participant | null>(null);
 
   if (!session) {
     return (
@@ -27,19 +31,19 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
     );
   }
 
-  const activePlayers = participants.filter((p) => p.gamesPlayed > 0);
+  const activePlayers = participants.filter((p) => (p.gamesPlayed || 0) > 0);
 
   const sortedPlayers = [...activePlayers].sort((a, b) => {
     if (sortBy === 'winRate') {
-      if (b.winRate !== a.winRate) return b.winRate - a.winRate;
-      return b.wins - a.wins;
+      if ((b.winRate || 0) !== (a.winRate || 0)) return (b.winRate || 0) - (a.winRate || 0);
+      return (b.wins || 0) - (a.wins || 0);
     }
     if (sortBy === 'wins') {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.winRate - a.winRate;
+      if ((b.wins || 0) !== (a.wins || 0)) return (b.wins || 0) - (a.wins || 0);
+      return (b.winRate || 0) - (a.winRate || 0);
     }
-    if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed;
-    return b.wins - a.wins;
+    if ((b.gamesPlayed || 0) !== (a.gamesPlayed || 0)) return (b.gamesPlayed || 0) - (a.gamesPlayed || 0);
+    return (b.wins || 0) - (a.wins || 0);
   });
 
   const completedMatches = matches.filter((m) => m.status === 'completed');
@@ -59,7 +63,7 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <button
             onClick={onBackToSession}
-            className="flex items-center gap-1.5 text-xs font-black text-slate-600 hover:text-slate-900 transition-colors py-2 px-3 rounded-2xl clay-btn clay-btn-secondary"
+            className="flex items-center gap-1.5 text-xs font-black text-slate-600 hover:text-slate-900 transition-colors py-2 px-3 rounded-2xl clay-btn clay-btn-secondary cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">Back to Court</span>
@@ -69,14 +73,16 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
             <BrandLogo size="xs" />
             <ProfileAvatarBadge size="xs" />
             <div className="text-left">
-              <h1 className="font-black text-sm sm:text-base text-slate-900 tracking-tight">Session Standings</h1>
+              <h1 className="font-black text-sm sm:text-base text-slate-900 tracking-tight">
+                Session Standings & Podium
+              </h1>
               <p className="text-[10px] text-slate-500 font-bold">{session.name}</p>
             </div>
           </div>
 
           <button
             onClick={onBackToHome}
-            className="px-4 py-2 rounded-2xl clay-btn clay-btn-primary text-xs font-black"
+            className="px-4 py-2 rounded-2xl clay-btn clay-btn-primary text-white text-xs font-black cursor-pointer shadow-md"
           >
             Done
           </button>
@@ -84,67 +90,13 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 sm:py-8 space-y-6">
-        {/* Podium Highlight (Top 3) */}
-        {sortedPlayers.length >= 3 && (
-          <div className="clay-card-dark text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-            <div className="text-center mb-6">
-              <span className="text-xs font-black uppercase tracking-widest text-emerald-400">
-                Session Podium
-              </span>
-              <h2 className="text-2xl font-black text-white mt-0.5">Top Performers</h2>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 sm:gap-6 items-end max-w-lg mx-auto text-center">
-              {/* 2nd Place */}
-              <div className="clay-subcard bg-slate-800 text-white rounded-2xl p-3 sm:p-4 flex flex-col items-center border border-slate-700">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-600 text-slate-100 flex items-center justify-center font-black text-xs sm:text-sm mb-1.5">
-                  2
-                </div>
-                <span className="font-black text-xs sm:text-sm truncate max-w-full text-slate-100">
-                  {sortedPlayers[1]?.name}
-                </span>
-                <span className="text-xs font-mono text-emerald-400 font-black mt-0.5">
-                  {sortedPlayers[1]?.winRate}%
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {sortedPlayers[1]?.wins}W
-                </span>
-              </div>
-
-              {/* 1st Place */}
-              <div className="bg-gradient-to-t from-emerald-900/80 to-emerald-700/60 rounded-3xl p-4 sm:p-5 border-2 border-emerald-400 flex flex-col items-center -mt-3 shadow-xl">
-                <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center font-black text-base sm:text-lg mb-1.5 shadow-md">
-                  <Trophy className="w-6 h-6 text-slate-950" />
-                </div>
-                <span className="font-black text-sm sm:text-base truncate max-w-full text-white">
-                  {sortedPlayers[0]?.name}
-                </span>
-                <span className="text-sm font-mono text-emerald-300 font-black mt-0.5">
-                  {sortedPlayers[0]?.winRate}%
-                </span>
-                <span className="text-[10px] sm:text-[11px] text-slate-200 font-semibold">
-                  {sortedPlayers[0]?.wins}W ({sortedPlayers[0]?.gamesPlayed}G)
-                </span>
-              </div>
-
-              {/* 3rd Place */}
-              <div className="clay-subcard bg-slate-800 text-white rounded-2xl p-3 sm:p-4 flex flex-col items-center border border-slate-700">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-800 text-amber-200 flex items-center justify-center font-black text-xs sm:text-sm mb-1.5">
-                  3
-                </div>
-                <span className="font-black text-xs sm:text-sm truncate max-w-full text-slate-100">
-                  {sortedPlayers[2]?.name}
-                </span>
-                <span className="text-xs font-mono text-emerald-400 font-black mt-0.5">
-                  {sortedPlayers[2]?.winRate}%
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {sortedPlayers[2]?.wins}W
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ========================================================= */}
+        {/* ENHANCED CHAMPIONS PODIUM: PLAYERS HOLDING PADDLE & MEDAL */}
+        {/* ========================================================= */}
+        <ChampionsPodium
+          participants={participants}
+          onSelectPlayer={(p) => setSelectedPlayer(p)}
+        />
 
         {/* Analytics Stat Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
@@ -175,36 +127,47 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex clay-inset rounded-2xl p-1 max-w-xs mx-auto text-xs font-black">
+        <div className="flex clay-inset rounded-2xl p-1 max-w-md mx-auto text-xs font-black">
           <button
-            onClick={() => setActiveTab('standings')}
-            className={`flex-1 py-2 rounded-xl transition-all clay-btn ${
-              activeTab === 'standings' ? 'clay-btn-secondary text-slate-900' : 'text-slate-600'
+            onClick={() => setActiveTab('podium')}
+            className={`flex-1 py-2 rounded-xl transition-all clay-btn flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'podium' ? 'clay-btn-secondary text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Standings
+            <Trophy className="w-3.5 h-3.5 text-amber-500" />
+            <span>Leaderboard</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('standings')}
+            className={`flex-1 py-2 rounded-xl transition-all clay-btn flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'standings' ? 'clay-btn-secondary text-slate-900 shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-sky-500" />
+            <span>Full Standings</span>
           </button>
           <button
             onClick={() => setActiveTab('matches')}
-            className={`flex-1 py-2 rounded-xl transition-all clay-btn ${
-              activeTab === 'matches' ? 'clay-btn-secondary text-slate-900' : 'text-slate-600'
+            className={`flex-1 py-2 rounded-xl transition-all clay-btn flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === 'matches' ? 'clay-btn-secondary text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Matches ({completedMatches.length})
+            <Layers className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Matches ({completedMatches.length})</span>
           </button>
         </div>
 
-        {/* Tab 1: Standings */}
-        {activeTab === 'standings' && (
+        {/* Tab 1 & 2: Standings Table */}
+        {(activeTab === 'podium' || activeTab === 'standings') && (
           <div className="clay-card rounded-3xl overflow-hidden">
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-black text-slate-900 text-sm">Player Leaderboard</h3>
+              <h3 className="font-black text-slate-900 text-sm">Session Player Leaderboard</h3>
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-500 font-bold hidden sm:inline">Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
-                  className="clay-inset rounded-xl px-2.5 py-1 text-slate-800 font-bold focus:outline-hidden text-xs"
+                  className="clay-inset rounded-xl px-2.5 py-1 text-slate-800 font-bold focus:outline-hidden text-xs bg-white"
                 >
                   <option value="winRate">Win Rate (%)</option>
                   <option value="wins">Total Wins</option>
@@ -221,7 +184,11 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
                 </div>
               ) : (
                 sortedPlayers.map((p, idx) => (
-                  <div key={p.participantId} className="clay-subcard rounded-2xl p-3.5 flex flex-col gap-2">
+                  <div
+                    key={p.participantId}
+                    onClick={() => setSelectedPlayer(p)}
+                    className="clay-subcard rounded-2xl p-3.5 flex flex-col gap-2 cursor-pointer hover:shadow-sm"
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-black text-sm font-mono w-7 text-center">
@@ -252,7 +219,7 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-slate-400 font-bold uppercase text-[10px] tracking-wider">
                     <th className="py-3 px-4 w-12 text-center">Rank</th>
                     <th className="py-3 px-4">Player</th>
-                    <th className="py-3 px-4">Skill</th>
+                    <th className="py-3 px-4">Category</th>
                     <th className="py-3 px-4">Games</th>
                     <th className="py-3 px-4">Wins</th>
                     <th className="py-3 px-4">Losses</th>
@@ -268,11 +235,24 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
                     </tr>
                   ) : (
                     sortedPlayers.map((p, idx) => (
-                      <tr key={p.participantId} className="hover:bg-slate-50/70 transition-colors">
+                      <tr
+                        key={p.participantId}
+                        onClick={() => setSelectedPlayer(p)}
+                        className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                      >
                         <td className="py-3 px-4 text-center font-black font-mono text-slate-900">
                           {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
                         </td>
-                        <td className="py-3 px-4 font-bold text-slate-900">{p.name}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center font-black text-[10px]">
+                            {p.avatarUrl ? (
+                              <img src={p.avatarUrl} alt={p.name} className="w-full h-full object-cover rounded-full" />
+                            ) : (
+                              p.name.slice(0, 2).toUpperCase()
+                            )}
+                          </div>
+                          <span>{p.name}</span>
+                        </td>
                         <td className="py-3 px-4">
                           <SkillBadge skill={p.skillLevel} />
                         </td>
@@ -291,60 +271,31 @@ export const SessionSummary: React.FC<SessionSummaryProps> = ({
           </div>
         )}
 
-        {/* Tab 2: Match Records */}
+        {/* Tab 3: Detailed Match Logs & History */}
         {activeTab === 'matches' && (
-          <div className="space-y-3">
-            {completedMatches.length === 0 ? (
-              <div className="clay-card p-10 rounded-3xl text-center text-xs text-slate-400 font-medium">
-                No completed matches recorded yet.
-              </div>
-            ) : (
-              completedMatches.map((m, idx) => {
-                const getNames = (ids: string[]) =>
-                  ids
-                    .map((id) => participants.find((p) => p.participantId === id)?.name || 'Player')
-                    .join(' & ');
-
-                const teamANames = getNames(m.teamA);
-                const teamBNames = getNames(m.teamB);
-                const isAWinner = m.winningTeam === 'teamA';
-
-                return (
-                  <div
-                    key={m.matchId}
-                    className="clay-card p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-xs font-black text-slate-400">#{idx + 1}</span>
-                      <div>
-                        <span className="font-black text-xs text-slate-900">{m.courtName}</span>
-                        <div className="text-xs mt-1 font-medium">
-                          <span className={isAWinner ? 'font-black text-emerald-700' : 'text-slate-600'}>
-                            {teamANames} {isAWinner && '★'}
-                          </span>
-                          <span className="text-slate-400 mx-2">vs</span>
-                          <span className={!isAWinner ? 'font-black text-emerald-700' : 'text-slate-600'}>
-                            {teamBNames} {!isAWinner && '★'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 text-xs font-mono self-end sm:self-center">
-                      {m.score && (
-                        <span className="px-3 py-1 clay-inset rounded-xl font-black text-slate-900">
-                          {m.score.teamA} - {m.score.teamB}
-                        </span>
-                      )}
-                      <span className="text-slate-400 font-semibold">{Math.round((m.durationSeconds || 600) / 60)} min</span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          <MatchHistoryView
+            matches={matches}
+            participants={participants}
+            courts={courts}
+            onSelectPlayer={(pId) => {
+              const p = participants.find((item) => item.participantId === pId);
+              if (p) setSelectedPlayer(p);
+            }}
+          />
         )}
       </main>
+
+      {/* Player Standing & Profile Modal */}
+      {selectedPlayer && (
+        <ProfileModal
+          isOpen={Boolean(selectedPlayer)}
+          onClose={() => setSelectedPlayer(null)}
+          sessionId={session.id}
+          participant={selectedPlayer}
+          allParticipants={participants}
+          matches={matches}
+        />
+      )}
     </div>
   );
 };

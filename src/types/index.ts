@@ -52,6 +52,13 @@ export interface Session {
   organizerId: string;
   organizerEmail?: string;
   announcementSettings: AnnouncementSettings;
+  lockedPartners?: Array<{
+    id1: string;
+    id2: string;
+    player1Name: string;
+    player2Name: string;
+    createdAt?: any;
+  }>;
   startedAt?: any;
   endedAt?: any;
   createdAt: any;
@@ -88,6 +95,8 @@ export interface Participant {
   pointsConceded?: number;
   pointDifferential?: number;
   streak?: number;
+  lockedPartnerId?: string | null;
+  lockedPartnerName?: string | null;
 }
 
 export interface Court {

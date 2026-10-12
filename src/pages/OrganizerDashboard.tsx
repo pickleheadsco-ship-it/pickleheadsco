@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
 import { useSession } from '../context/SessionContext';
+import { useAuth } from '../context/AuthContext';
 import { Court, Match, Participant, GroupMatchProposal, MatchingMode } from '../types';
 import { CourtCard } from '../components/courts/CourtCard';
 import { NextGroupCard } from '../components/queue/NextGroupCard';
 import { QueueTable } from '../components/queue/QueueTable';
 import { LiveLeaderboard } from '../components/leaderboard/LiveLeaderboard';
+import { PlayerPairingsView } from '../components/pairings/PlayerPairingsView';
 import { MatchResultModal } from '../components/matches/MatchResultModal';
 import { ManualMatchModal } from '../components/matches/ManualMatchModal';
 import { AddPlayerModal } from '../components/players/AddPlayerModal';
+import { PlayersManagementView } from '../components/players/PlayersManagementView';
+import { ReclubImportModal } from '../components/players/ReclubImportModal';
+import { LockedPartnersModal } from '../components/players/LockedPartnersModal';
+import { MatchHistoryView } from '../components/matches/MatchHistoryView';
+import { ChampionsPodium } from '../components/podium/ChampionsPodium';
 import { SpeechSettingsModal } from '../components/announcements/SpeechSettingsModal';
 import { EndSessionModal } from '../components/shared/EndSessionModal';
 import { QRCodeDisplay } from '../components/qr/QRCodeDisplay';
@@ -27,6 +34,7 @@ import {
   addCourtToSession,
   forceResetCourt,
   createSession,
+  updateAnnouncementSettings,
 } from '../services/sessions/sessionService';
 import {
   QrCode,
@@ -69,13 +77,21 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
     error,
     setSessionId,
   } = useSession();
+  const { isAdmin, isOrganizer, user } = useAuth();
+  const activeParticipants = participants.filter((p) => p.status !== 'left');
+  const completedMatches = matches.filter((m) => m.status === 'completed');
 
-  // Mobile section tab (Courts | Queue | Next | Leaderboard)
-  const [mobileSection, setMobileSection] = useState<'all' | 'courts' | 'next' | 'queue' | 'leaderboard'>('all');
+  // Mobile / Panel section tab (Courts | Players | Pairings | Next | Queue | Leaderboard | History)
+  const [mobileSection, setMobileSection] = useState<'all' | 'courts' | 'players' | 'pairings' | 'next' | 'queue' | 'leaderboard' | 'history'>('all');
+  const [pairingIndex, setPairingIndex] = useState(0);
 
   // Modals state
   const [showQRModal, setShowQRModal] = useState(false);
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false);
+  const [showReclubModal, setShowReclubModal] = useState(false);
+  const [showLockedPartnersModal, setShowLockedPartnersModal] = useState(false);
+  const [preselectedLockedPlayerId, setPreselectedLockedPlayerId] = useState<string | null>(null);
+  const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<Participant | null>(null);
   const [showSpeechModal, setShowSpeechModal] = useState(false);
   const [showManualMatchModal, setShowManualMatchModal] = useState(false);
   const [showEndSessionModal, setShowEndSessionModal] = useState(false);
@@ -225,12 +241,10 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   };
 
   const handleResetCourt = async (court: Court) => {
-    if (confirm(`Reset ${court.name} to available? This will clear any ongoing match state on this court.`)) {
-      try {
-        await forceResetCourt(sessionId, court.courtId);
-      } catch (err) {
-        console.error('Failed to reset court:', err);
-      }
+    try {
+      await forceResetCourt(sessionId, court.courtId);
+    } catch (err) {
+      console.error('Failed to reset court:', err);
     }
   };
 
@@ -376,24 +390,30 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
               <Volume2 className="w-4 h-4" />
             </button>
 
-            <button
-              onClick={() => setShowEndSessionModal(true)}
-              className="px-3 py-2 rounded-2xl clay-btn clay-btn-danger text-white text-xs font-black"
-            >
-              End
-            </button>
+            {(isAdmin || isOrganizer) && (
+              <button
+                onClick={() => setShowEndSessionModal(true)}
+                className="px-3 py-2 rounded-2xl clay-btn clay-btn-danger text-white text-xs font-black shadow-xs cursor-pointer"
+                title="End session (Admin only)"
+              >
+                End
+              </button>
+            )}
           </div>
         </div>
 
-        {/* MOBILE VIEW SWITCHER (Visible on < 1024px) */}
-        <div className="lg:hidden px-4 pb-2.5 flex items-center gap-1.5 overflow-x-auto text-xs font-black">
+        {/* VIEW SWITCHER TABS (Responsive for mobile & desktop) */}
+        <div className="px-4 pb-2.5 flex items-center gap-1.5 overflow-x-auto text-xs font-black">
           {(
             [
               { id: 'all', label: 'All Panels' },
               { id: 'courts', label: `Courts (${courts.length})` },
+              { id: 'players', label: `Players (${activeParticipants.length})` },
+              { id: 'pairings', label: 'Pairings' },
               { id: 'next', label: 'Next Up' },
               { id: 'queue', label: `Queue (${waitingQueue.length})` },
               { id: 'leaderboard', label: 'Leaderboard' },
+              { id: 'history', label: `History (${completedMatches.length})` },
             ] as const
           ).map((tab) => (
             <button
@@ -519,14 +539,93 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           </div>
         )}
 
+        {/* Doubles Pairing Section */}
+        {(mobileSection === 'all' || mobileSection === 'pairings') && (
+          <ErrorBoundary fallbackTitle="Doubles Pairings">
+            <PlayerPairingsView
+              courts={activeCourtsList}
+              activeMatches={activeMatches}
+              participants={participants}
+              nextProposal={nextProposal}
+              isOrganizer={true}
+              pairingIndex={pairingIndex}
+              onCyclePairing={() => setPairingIndex((prev) => (prev + 1) % 3)}
+            />
+          </ErrorBoundary>
+        )}
+
         {/* Live Leaderboard Section */}
         {(mobileSection === 'all' || mobileSection === 'leaderboard') && (
           <ErrorBoundary fallbackTitle="Live Leaderboard">
-            <div>
+            <div className="space-y-6">
+              <ChampionsPodium
+                participants={participants}
+                onSelectPlayer={(p) => setSelectedPlayerProfile(p)}
+              />
               <LiveLeaderboard
                 participants={participants}
                 courts={courts}
                 activeMatches={activeMatches}
+              />
+            </div>
+          </ErrorBoundary>
+        )}
+
+        {/* Players Management Section */}
+        {(mobileSection === 'all' || mobileSection === 'players') && (
+          <ErrorBoundary fallbackTitle="Players & Category Management">
+            <div>
+              <div className="flex items-center justify-between mb-3 px-1">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                    Player Roster & Categories
+                  </h2>
+                  <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-xl font-mono font-black clay-pill">
+                    {activeParticipants.length} Players
+                  </span>
+                </div>
+                <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                  Change category (Beginner / Intermediate / Advanced) or lock partners
+                </span>
+              </div>
+              <PlayersManagementView
+                sessionId={sessionId}
+                session={session}
+                participants={participants}
+                onOpenCheckIn={() => setShowAddPlayerModal(true)}
+                onOpenReclubImport={() => setShowReclubModal(true)}
+                onOpenLockedPartners={(pId) => {
+                  setPreselectedLockedPlayerId(pId || null);
+                  setShowLockedPartnersModal(true);
+                }}
+                onSelectPlayerProfile={(p) => setSelectedPlayerProfile(p)}
+              />
+            </div>
+          </ErrorBoundary>
+        )}
+
+        {/* Match History Section */}
+        {(mobileSection === 'all' || mobileSection === 'history') && (
+          <ErrorBoundary fallbackTitle="Match History & Logs">
+            <div>
+              <div className="flex items-center justify-between mb-3 px-1">
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                    Match History & Result Logs
+                  </h2>
+                  <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-xl font-mono font-black clay-pill">
+                    {completedMatches.length} Matches
+                  </span>
+                </div>
+              </div>
+              <MatchHistoryView
+                matches={matches}
+                participants={participants}
+                courts={courts}
+                onSelectPlayer={(pId) => {
+                  const p = participants.find((item) => item.participantId === pId);
+                  if (p) setSelectedPlayerProfile(p);
+                }}
               />
             </div>
           </ErrorBoundary>
@@ -542,7 +641,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                 onToggleSelect={handleToggleQueueSelect}
                 onToggleRest={handleToggleRest}
                 onRemove={handleRemoveParticipant}
-                onEdit={(p) => {}}
+                onEdit={(p) => setSelectedPlayerProfile(p)}
                 isOrganizer={true}
               />
             </div>
@@ -638,7 +737,14 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           isOpen={true}
           onClose={() => setShowSpeechModal(false)}
           settings={session.announcementSettings}
-          onSave={async () => {}}
+          onSave={async (newSettings) => {
+            try {
+              await updateAnnouncementSettings(sessionId, newSettings);
+            } catch (err) {
+              console.error('Failed to save announcement settings:', err);
+              throw err;
+            }
+          }}
         />
       )}
 
@@ -685,6 +791,46 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           isOpen={true}
           onClose={() => setShowProfileModal(false)}
           sessionId={sessionId}
+          allParticipants={participants}
+          matches={matches}
+        />
+      )}
+
+      {/* Selected Player Profile & Standing Modal */}
+      {selectedPlayerProfile && (
+        <ProfileModal
+          isOpen={true}
+          onClose={() => setSelectedPlayerProfile(null)}
+          sessionId={sessionId}
+          participantId={selectedPlayerProfile.participantId}
+          participant={selectedPlayerProfile}
+          allParticipants={participants}
+          matches={matches}
+        />
+      )}
+
+      {/* Reclub URL Importer Modal */}
+      {showReclubModal && (
+        <ReclubImportModal
+          isOpen={true}
+          onClose={() => setShowReclubModal(false)}
+          sessionId={sessionId}
+          onSuccess={() => {}}
+        />
+      )}
+
+      {/* Locked-in Doubles Partners Modal */}
+      {showLockedPartnersModal && (
+        <LockedPartnersModal
+          isOpen={true}
+          onClose={() => {
+            setShowLockedPartnersModal(false);
+            setPreselectedLockedPlayerId(null);
+          }}
+          sessionId={sessionId}
+          session={session}
+          participants={participants}
+          preselectedPlayer1Id={preselectedLockedPlayerId}
         />
       )}
     </div>
