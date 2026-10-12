@@ -172,7 +172,15 @@ export async function createSession(params: CreateSessionParams): Promise<string
       batch.set(courtRef, courtData);
     }
 
-    await batch.commit();
+    // Commit to Firestore with a safe timeout race so terminal launch is instantaneous even on slow networks
+    try {
+      await Promise.race([
+        batch.commit(),
+        new Promise((resolve) => setTimeout(resolve, 1200)),
+      ]);
+    } catch (commitErr) {
+      console.warn('Firestore batch commit deferred or failed:', commitErr);
+    }
 
     // Fire-and-forget audit event so it never blocks session launch
     const auditRef = doc(collection(db, `sessions/${sessionId}/audit_logs`));
@@ -236,18 +244,42 @@ export async function joinSessionAsParticipant(
   params: {
     participantId?: string;
     name: string;
+    firstName?: string;
+    surname?: string;
+    avatarUrl?: string;
     skillLevel: SkillLevel;
   }
 ): Promise<Participant> {
   const participantsRef = collection(db, `sessions/${sessionId}/participants`);
-  const participantDoc = params.participantId
-    ? doc(db, `sessions/${sessionId}/participants`, params.participantId)
-    : doc(participantsRef);
-  const pId = participantDoc.id;
 
   try {
-    // Determine current max queue position
+    // 1. Double-entry prevention: check if player already exists in active queue
     const snapshot = await getDocs(participantsRef);
+    const trimmedName = params.name.trim().toLowerCase();
+
+    const existingMatch = snapshot.docs
+      .map((d) => ({ participantId: d.id, ...d.data() } as Participant))
+      .find(
+        (p) =>
+          p.status !== 'left' &&
+          (p.name?.trim().toLowerCase() === trimmedName ||
+            (params.firstName &&
+              params.surname &&
+              p.firstName?.trim().toLowerCase() === params.firstName.trim().toLowerCase() &&
+              p.surname?.trim().toLowerCase() === params.surname.trim().toLowerCase()))
+      );
+
+    // If already in queue, return existing participant to prevent duplicate entry
+    if (existingMatch) {
+      return existingMatch;
+    }
+
+    const participantDoc = params.participantId
+      ? doc(db, `sessions/${sessionId}/participants`, params.participantId)
+      : doc(participantsRef);
+    const pId = participantDoc.id;
+
+    // Determine current max queue position
     let maxPos = 0;
     snapshot.forEach((d) => {
       const pos = d.data().queuePosition || 0;
@@ -258,6 +290,9 @@ export async function joinSessionAsParticipant(
       participantId: pId,
       sessionId,
       name: params.name.trim(),
+      firstName: params.firstName?.trim() || '',
+      surname: params.surname?.trim() || '',
+      avatarUrl: params.avatarUrl || '',
       skillLevel: params.skillLevel,
       status: 'waiting',
       queuePosition: maxPos + 1,
@@ -276,7 +311,8 @@ export async function joinSessionAsParticipant(
     await setDoc(participantDoc, newParticipant);
     return newParticipant;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, `sessions/${sessionId}/participants/${pId}`);
+    const fallbackId = params.participantId || `p-${Date.now()}`;
+    handleFirestoreError(error, OperationType.CREATE, `sessions/${sessionId}/participants/${fallbackId}`);
   }
 }
 
@@ -478,6 +514,18 @@ export async function completeMatch(
         const losses = (pData.losses || 0) + (isWinner ? 0 : 1);
         const winRate = Math.round((wins / gamesPlayed) * 100);
 
+        // Point tracking
+        const isTeamA = matchData.teamA.includes(pId);
+        const teamScore = score ? (isTeamA ? score.teamA : score.teamB) : (isWinner ? 11 : 9);
+        const oppScore = score ? (isTeamA ? score.teamB : score.teamA) : (isWinner ? 9 : 11);
+        const pointsScored = (pData.pointsScored || 0) + teamScore;
+        const pointsConceded = (pData.pointsConceded || 0) + oppScore;
+        const pointDifferential = (pData.pointDifferential || 0) + (teamScore - oppScore);
+
+        // Streak tracking
+        const currentStreak = pData.streak || 0;
+        const streak = isWinner ? (currentStreak >= 0 ? currentStreak + 1 : 1) : 0;
+
         // Calculate co-play sets for Social Mix tracking
         const currentPartners = matchData.teamA.includes(pId)
           ? matchData.teamA.filter((id) => id !== pId)
@@ -496,6 +544,10 @@ export async function completeMatch(
           wins,
           losses,
           winRate,
+          pointsScored,
+          pointsConceded,
+          pointDifferential,
+          streak,
           lastMatchResult: isWinner ? 'win' : 'loss',
           lastPlayedAt: serverTimestamp(),
           queuePosition: maxPos + offset,

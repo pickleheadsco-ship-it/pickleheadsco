@@ -62,6 +62,9 @@ export interface Participant {
   participantId: string;
   sessionId: string;
   name: string;
+  firstName?: string;
+  surname?: string;
+  avatarUrl?: string;
   skillLevel: SkillLevel;
   status: ParticipantStatus;
   queuePosition: number;
@@ -81,6 +84,10 @@ export interface Participant {
   previousPartnerIds?: string[];
   previousOpponentIds?: string[];
   lastMatchResult?: 'win' | 'loss' | null;
+  pointsScored?: number;
+  pointsConceded?: number;
+  pointDifferential?: number;
+  streak?: number;
 }
 
 export interface Court {

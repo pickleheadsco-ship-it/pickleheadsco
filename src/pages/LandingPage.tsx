@@ -103,13 +103,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
 
   const handleCreateNewSession = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreating) return;
     setIsCreating(true);
     setCreateSessionError(null);
     try {
       let currentUser = user;
       if (!currentUser) {
         try {
-          currentUser = await signInAsAnonymousPlayer();
+          currentUser = await Promise.race([
+            signInAsAnonymousPlayer(),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
+          ]);
         } catch {
           // Gracefully continue even if anonymous auth is restricted
         }
@@ -117,10 +121,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
       const effectiveOrganizerEmail = user?.email || organizerEmail || 'organizer@picklequeue.internal';
       const effectiveOrganizerId = currentUser?.uid || `org-${Date.now()}`;
       const sessionId = await createSession({
-        name: sessionName || 'Open Play Session',
-        venueName: venueName || 'PickleCenter Arena',
-        numberOfCourts: courtCount,
-        matchingMode: matchMode,
+        name: sessionName.trim() || 'Open Play Session',
+        venueName: venueName.trim() || 'PickleCenter Arena',
+        numberOfCourts: courtCount || 3,
+        matchingMode: matchMode || 'balanced',
         organizerId: effectiveOrganizerId,
         organizerEmail: effectiveOrganizerEmail,
       });
@@ -129,11 +133,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
         throw new Error('Unable to generate session terminal ID.');
       }
 
-      // Immediately refresh active sessions list
-      fetchActiveSessions();
-
       setShowCreateModal(false);
       onSelectSession(sessionId, 'organizer');
+
+      // Refresh background active sessions list silently
+      fetchActiveSessions().catch(() => {});
     } catch (err: any) {
       console.error('Session creation error:', err);
       setCreateSessionError(err?.message || 'Failed to create session. Please try again.');
@@ -207,15 +211,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                   <PlusCircle className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Host Session</span>
                 </button>
-                {sessions.length > 0 && (
-                  <button
-                    onClick={() => onSelectSession(sessions[0].id, 'organizer')}
-                    className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
-                  >
-                    <Play className="w-3.5 h-3.5" />
-                    <span>Terminal</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    if (sessions.length > 0) {
+                      onSelectSession(sessions[0].id, 'organizer');
+                    } else {
+                      setShowCreateModal(true);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>Terminal</span>
+                </button>
                 <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-purple-50 text-purple-800 text-xs font-bold clay-subcard">
                   <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                   <span className="truncate max-w-[150px]">{user?.email || organizerEmail || 'Admin'}</span>
@@ -243,15 +251,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                   <PlusCircle className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Host Session</span>
                 </button>
-                {sessions.length > 0 && (
-                  <button
-                    onClick={() => onSelectSession(sessions[0].id, 'organizer')}
-                    className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
-                  >
-                    <Play className="w-3.5 h-3.5" />
-                    <span>Terminal</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    if (sessions.length > 0) {
+                      onSelectSession(sessions[0].id, 'organizer');
+                    } else {
+                      setShowCreateModal(true);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-primary bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>Terminal</span>
+                </button>
                 <button
                   onClick={logout}
                   className="p-2 rounded-2xl clay-btn clay-btn-secondary text-slate-600 text-xs"
@@ -270,15 +282,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                   <PlusCircle className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Host Session</span>
                 </button>
-                {sessions.length > 0 && (
-                  <button
-                    onClick={() => onSelectSession(sessions[0].id, 'organizer')}
-                    className="px-3 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-800 text-xs font-bold flex items-center gap-1 shadow-2xs"
-                  >
-                    <Play className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="hidden sm:inline">Open Terminal</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    if (sessions.length > 0) {
+                      onSelectSession(sessions[0].id, 'organizer');
+                    } else {
+                      setShowCreateModal(true);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-800 text-xs font-bold flex items-center gap-1 shadow-2xs"
+                >
+                  <Play className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="hidden sm:inline">Open Terminal</span>
+                </button>
                 <button
                   onClick={() => setShowLoginModal(true)}
                   className="px-3.5 py-2 rounded-2xl clay-btn clay-btn-secondary text-slate-800 text-xs font-bold flex items-center gap-1.5 shadow-xs hover:border-emerald-300 transition-all"
@@ -595,9 +611,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSelectSession, onOpe
                 <button
                   type="submit"
                   disabled={isCreating}
-                  className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {isCreating ? 'Creating Session...' : 'Create & Open Terminal'}
+                  <Play className="w-3.5 h-3.5" />
+                  <span>{isCreating ? 'Launching Terminal...' : 'Create & Open Terminal'}</span>
                 </button>
               </div>
             </form>

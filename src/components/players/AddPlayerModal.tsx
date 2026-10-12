@@ -17,7 +17,8 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
   onSuccess,
 }) => {
   const [mode, setMode] = useState<'single' | 'bulk'>('single');
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [surname, setSurname] = useState('');
   const [skillLevel, setSkillLevel] = useState<SkillLevel>('intermediate');
   const [bulkText, setBulkText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,15 +28,25 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
 
   const handleSubmitSingle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const cleanFirst = firstName.trim();
+    const cleanSurname = surname.trim();
+    if (!cleanFirst || !cleanSurname) {
+      setError('Please provide both First Name and Surname.');
+      return;
+    }
+    const fullName = `${cleanFirst} ${cleanSurname}`;
+
     setIsSubmitting(true);
     setError(null);
     try {
       await joinSessionAsParticipant(sessionId, {
-        name: name.trim(),
+        name: fullName,
+        firstName: cleanFirst,
+        surname: cleanSurname,
         skillLevel,
       });
-      setName('');
+      setFirstName('');
+      setSurname('');
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -115,20 +126,39 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
 
         {mode === 'single' ? (
           <form onSubmit={handleSubmitSingle} className="mt-4 space-y-4">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
-                Player Full Name
-              </label>
-              <div className="clay-inset rounded-2xl px-3.5 py-2.5">
-                <input
-                  type="text"
-                  required
-                  maxLength={50}
-                  placeholder="e.g. Alex Henderson"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-hidden"
-                />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                  First Name <span className="text-rose-500">*</span>
+                </label>
+                <div className="clay-inset rounded-2xl px-3.5 py-2.5">
+                  <input
+                    type="text"
+                    required
+                    maxLength={35}
+                    placeholder="e.g. Alex"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
+                  Surname <span className="text-rose-500">*</span>
+                </label>
+                <div className="clay-inset rounded-2xl px-3.5 py-2.5">
+                  <input
+                    type="text"
+                    required
+                    maxLength={35}
+                    placeholder="e.g. Henderson"
+                    value={surname}
+                    onChange={(e) => setSurname(e.target.value)}
+                    className="w-full bg-transparent text-xs font-bold text-slate-900 focus:outline-hidden"
+                  />
+                </div>
               </div>
             </div>
 
@@ -164,7 +194,7 @@ export const AddPlayerModal: React.FC<AddPlayerModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !name.trim()}
+                disabled={isSubmitting || !firstName.trim() || !surname.trim()}
                 className="px-5 py-2.5 rounded-2xl clay-btn clay-btn-primary text-xs font-black shadow-md disabled:opacity-40"
               >
                 {isSubmitting ? 'Checking In...' : 'Add to Queue'}

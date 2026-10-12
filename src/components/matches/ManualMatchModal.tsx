@@ -23,12 +23,17 @@ export const ManualMatchModal: React.FC<ManualMatchModalProps> = ({
 }) => {
   const [selectedIds, setSelectedIds] = useState<string[]>(preSelectedIds);
   const [selectedCourtId, setSelectedCourtId] = useState<string>(availableCourts[0]?.courtId || '');
-  const [shuffledSeed, setShuffledSeed] = useState(0);
-  const [isStarting, setIsStarting] = useState(false);
+  const [pairingComboIndex, setPairingComboIndex] = useState(0);
+  const [customTeamA, setCustomTeamA] = useState<Participant[] | null>(null);
+  const [customTeamB, setCustomTeamB] = useState<Participant[] | null>(null);
+  const [selectedSwapId, setSelectedSwapId] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const toggleSelect = (pId: string) => {
+    setCustomTeamA(null);
+    setCustomTeamB(null);
+    setSelectedSwapId(null);
     if (selectedIds.includes(pId)) {
       setSelectedIds(selectedIds.filter((id) => id !== pId));
     } else {
@@ -41,8 +46,76 @@ export const ManualMatchModal: React.FC<ManualMatchModalProps> = ({
     .map((id) => availableParticipants.find((p) => p.participantId === id))
     .filter(Boolean) as Participant[];
 
-  const proposal = selectedPlayers.length === 4 ? buildManualMatchProposal(selectedPlayers, shuffledSeed > 0) : null;
+  // 3 Doubles Pairing combinations
+  const p0 = selectedPlayers[0];
+  const p1 = selectedPlayers[1];
+  const p2 = selectedPlayers[2];
+  const p3 = selectedPlayers[3];
+
+  const combos = selectedPlayers.length === 4 ? [
+    { label: 'Pairing Option 1', teamA: [p0, p1], teamB: [p2, p3] },
+    { label: 'Pairing Option 2', teamA: [p0, p2], teamB: [p1, p3] },
+    { label: 'Pairing Option 3', teamA: [p0, p3], teamB: [p1, p2] },
+  ] : [];
+
+  const activeA = customTeamA || (combos[pairingComboIndex]?.teamA || (selectedPlayers.length === 4 ? [p0, p1] : []));
+  const activeB = customTeamB || (combos[pairingComboIndex]?.teamB || (selectedPlayers.length === 4 ? [p2, p3] : []));
+
+  const scoreA = (activeA[0] ? (activeA[0].skillLevel === 'advanced' ? 3 : activeA[0].skillLevel === 'intermediate' ? 2 : 1) : 0) +
+                 (activeA[1] ? (activeA[1].skillLevel === 'advanced' ? 3 : activeA[1].skillLevel === 'intermediate' ? 2 : 1) : 0);
+  const scoreB = (activeB[0] ? (activeB[0].skillLevel === 'advanced' ? 3 : activeB[0].skillLevel === 'intermediate' ? 2 : 1) : 0) +
+                 (activeB[1] ? (activeB[1].skillLevel === 'advanced' ? 3 : activeB[1].skillLevel === 'intermediate' ? 2 : 1) : 0);
+  const delta = Math.abs(scoreA - scoreB);
+
+  const proposal: GroupMatchProposal | null = selectedPlayers.length === 4 ? {
+    players: selectedPlayers,
+    teamA: activeA,
+    teamB: activeB,
+    skillDelta: delta,
+    reasoning: customTeamA ? `Custom pairing. Skill delta: ${delta}.` : `Pairing ${pairingComboIndex + 1} of 3 (Skill delta: ${delta}).`,
+  } : null;
+
   const targetCourt = availableCourts.find((c) => c.courtId === selectedCourtId) || availableCourts[0];
+
+  const handleCycleCombo = () => {
+    setCustomTeamA(null);
+    setCustomTeamB(null);
+    setSelectedSwapId(null);
+    setPairingComboIndex((prev) => (prev + 1) % 3);
+  };
+
+  const handleSwapPlayerClick = (p: Participant) => {
+    if (!selectedSwapId) {
+      setSelectedSwapId(p.participantId);
+      return;
+    }
+    if (selectedSwapId === p.participantId) {
+      setSelectedSwapId(null);
+      return;
+    }
+
+    const nextA = [...activeA];
+    const nextB = [...activeB];
+    const inA1 = nextA.findIndex((item) => item.participantId === selectedSwapId);
+    const inA2 = nextA.findIndex((item) => item.participantId === p.participantId);
+    const inB1 = nextB.findIndex((item) => item.participantId === selectedSwapId);
+    const inB2 = nextB.findIndex((item) => item.participantId === p.participantId);
+
+    const first = selectedPlayers.find((item) => item.participantId === selectedSwapId)!;
+    const second = p;
+
+    if (inA1 !== -1 && inB2 !== -1) {
+      nextA[inA1] = second;
+      nextB[inB2] = first;
+    } else if (inB1 !== -1 && inA2 !== -1) {
+      nextB[inB1] = second;
+      nextA[inA2] = first;
+    }
+
+    setCustomTeamA(nextA);
+    setCustomTeamB(nextB);
+    setSelectedSwapId(null);
+  };
 
   const handleStart = async () => {
     if (!proposal || !targetCourt) return;
@@ -84,11 +157,12 @@ export const ManualMatchModal: React.FC<ManualMatchModalProps> = ({
             {selectedIds.length === 4 && (
               <button
                 type="button"
-                onClick={() => setShuffledSeed((s) => s + 1)}
+                onClick={handleCycleCombo}
                 className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 py-1 px-2.5 rounded-xl clay-subcard"
+                title="Rotate between all 3 doubles partner combinations"
               >
                 <Shuffle className="w-3.5 h-3.5" />
-                <span>Shuffle Teams</span>
+                <span>Pairing {customTeamA ? 'Custom' : `${pairingComboIndex + 1}/3`}</span>
               </button>
             )}
           </div>
@@ -134,25 +208,52 @@ export const ManualMatchModal: React.FC<ManualMatchModalProps> = ({
         {/* Selected Match Preview */}
         {proposal && (
           <div className="mt-4 clay-subcard p-3.5 rounded-2xl border border-slate-200">
-            <div className="text-[11px] font-black text-slate-600 uppercase tracking-wider mb-2">
-              Team Preview (Skill Delta: {proposal.skillDelta})
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                Doubles Pairing (Skill Delta: {proposal.skillDelta})
+              </span>
+              <span className="text-[10px] text-slate-500 font-medium">Click 2 players to swap</span>
             </div>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="bg-white p-3 rounded-xl clay-pill border border-emerald-200">
-                <span className="font-black text-emerald-800 text-[11px] block mb-1">TEAM A</span>
-                {proposal.teamA.map((p) => (
-                  <div key={p.participantId} className="font-bold text-slate-800 truncate">
-                    {p.name} ({p.skillLevel[0].toUpperCase()})
-                  </div>
-                ))}
+                <span className="font-black text-emerald-800 text-[11px] block mb-1">TEAM A PARTNERS</span>
+                <div className="space-y-1">
+                  {proposal.teamA.map((p) => {
+                    const isSelected = selectedSwapId === p.participantId;
+                    return (
+                      <div
+                        key={p.participantId}
+                        onClick={() => handleSwapPlayerClick(p)}
+                        className={`font-bold p-1 rounded-lg truncate cursor-pointer transition-all ${
+                          isSelected ? 'bg-amber-100 text-amber-950 ring-2 ring-amber-400' : 'text-slate-800 hover:bg-slate-100'
+                        }`}
+                        title="Click to swap partner"
+                      >
+                        {p.name} ({p.skillLevel[0].toUpperCase()})
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="bg-white p-3 rounded-xl clay-pill border border-sky-200">
-                <span className="font-black text-sky-800 text-[11px] block mb-1">TEAM B</span>
-                {proposal.teamB.map((p) => (
-                  <div key={p.participantId} className="font-bold text-slate-800 truncate">
-                    {p.name} ({p.skillLevel[0].toUpperCase()})
-                  </div>
-                ))}
+                <span className="font-black text-sky-800 text-[11px] block mb-1">TEAM B PARTNERS</span>
+                <div className="space-y-1">
+                  {proposal.teamB.map((p) => {
+                    const isSelected = selectedSwapId === p.participantId;
+                    return (
+                      <div
+                        key={p.participantId}
+                        onClick={() => handleSwapPlayerClick(p)}
+                        className={`font-bold p-1 rounded-lg truncate cursor-pointer transition-all ${
+                          isSelected ? 'bg-amber-100 text-amber-950 ring-2 ring-amber-400' : 'text-slate-800 hover:bg-slate-100'
+                        }`}
+                        title="Click to swap partner"
+                      >
+                        {p.name} ({p.skillLevel[0].toUpperCase()})
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

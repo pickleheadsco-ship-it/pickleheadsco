@@ -145,6 +145,7 @@ export const PlayerSession: React.FC<PlayerSessionProps> = ({
     if (confirm('Leave this open-play session? Your match history is saved.')) {
       try {
         await leaveSession(sessionId, currentParticipant.participantId);
+        localStorage.removeItem(`picklequeue_session_${sessionId}_participant_id`);
         setCurrentParticipantId(null);
         onLeaveToHome();
       } catch (err) {
